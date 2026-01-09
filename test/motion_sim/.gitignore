@@ -1,0 +1,10 @@
+# Binaries
+motion_sim
+accuracy_test
+debug_scurve
+debug_units
+diagnose_error
+analyze_planning
+
+# Generated CSV output
+*.csv

@@ -58,6 +58,7 @@ namespace ClearCore
     {
         friend class MotorManager;
         friend class TestIO;
+        friend class SCurveStepGenerator;
 
     public:
 #ifndef HIDE_FROM_DOXYGEN
