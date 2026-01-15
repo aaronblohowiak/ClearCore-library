@@ -28,12 +28,17 @@ static bool RequireConnected(Controller* ctrl, const ParsedCommand& cmd) {
     return true;
 }
 
-// Helper to check if pin is available for reconfiguration
-static bool CheckPinNotReserved(Controller* ctrl, const ParsedCommand& cmd, int32_t pin) {
+// Helper to check if pin is available for configuration
+static bool CheckPinAvailable(Controller* ctrl, const ParsedCommand& cmd, int32_t pin) {
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
-    if (slot->mode == PinMode::MOTOR_LIMIT) {
-        SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
-                 "Pin is reserved for motor limit switch");
+    if (slot->mode != PinMode::UNCONFIGURED) {
+        if (slot->mode == PinMode::MOTOR_LIMIT) {
+            SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                     "Pin is reserved for motor limit switch");
+        } else {
+            SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                     "Pin is already configured");
+        }
         return false;
     }
     return true;
@@ -55,7 +60,7 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+    if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_IN;
@@ -86,7 +91,7 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+    if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_OUT;
@@ -118,7 +123,7 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+    if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::ANALOG_IN;
@@ -154,7 +159,7 @@ static void CmdConfigurePwm(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+    if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::PWM;
@@ -184,7 +189,7 @@ static void CmdConfigureHBridge(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+    if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::H_BRIDGE;
@@ -215,7 +220,7 @@ static void CmdConfigureEndstop(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+    if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::END_STOP;

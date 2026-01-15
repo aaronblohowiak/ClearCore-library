@@ -671,3 +671,49 @@ TEST_F(PinTest, DigitalPinNotBlockedWithoutLimitSwitch) {
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_FALSE(serial.HasOutput("error"));
 }
+
+TEST_F(PinTest, DuplicatePinConfigurationFails) {
+    // Configure pin 0 as digital output
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Try to configure pin 0 again as digital input - should fail
+    serial.SendLine("configure_digital_in pin=0");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=207"));  // PIN_CONFLICT
+    EXPECT_TRUE(serial.HasOutput("already configured"));
+}
+
+TEST_F(PinTest, DuplicatePinConfigurationSameTypeFails) {
+    // Configure pin 0 as digital output
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Try to configure pin 0 again as digital output - should fail
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=207"));  // PIN_CONFLICT
+}
+
+TEST_F(PinTest, DifferentPinsCanBeConfigured) {
+    // Configure pin 0 as digital output
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Configure pin 1 as digital output - should succeed
+    serial.SendLine("configure_digital_out pin=1");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_FALSE(serial.HasOutput("error"));
+}
