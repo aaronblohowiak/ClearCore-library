@@ -598,3 +598,76 @@ TEST_F(PinTest, NoFaultWhenPinNotFaulted) {
     EXPECT_FALSE(serial.HasEvent("error"));
     EXPECT_NE(ctrl->GetState(), State::ERROR);
 }
+
+// === Pin Conflict Tests ===
+
+TEST_F(PinTest, LimitSwitchPinConflictDigitalIn) {
+    // Configure motor with limit switch on pin 6
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=6 homing_direction=-1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to configure pin 6 as digital input - should fail
+    serial.SendLine("configure_digital_in pin=6");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=207"));  // PIN_CONFLICT
+    EXPECT_TRUE(serial.HasOutput("reserved for motor limit"));
+}
+
+TEST_F(PinTest, LimitSwitchPinConflictDigitalOut) {
+    // Configure motor with limit switch on pin 0
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=0 homing_direction=-1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to configure pin 0 as digital output - should fail
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=207"));  // PIN_CONFLICT
+}
+
+TEST_F(PinTest, LimitSwitchPinConflictAnalogIn) {
+    // Configure motor with limit switch on pin 10 (analog capable)
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=10 homing_direction=-1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to configure pin 10 as analog input - should fail
+    serial.SendLine("configure_analog_in pin=10");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=207"));  // PIN_CONFLICT
+}
+
+TEST_F(PinTest, LimitSwitchPinConflictEndstop) {
+    // Configure motor with limit switch on pin 7
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=7 homing_direction=-1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to configure pin 7 as endstop - should fail
+    serial.SendLine("configure_endstop pin=7");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=207"));  // PIN_CONFLICT
+}
+
+TEST_F(PinTest, DigitalPinNotBlockedWithoutLimitSwitch) {
+    // Configure motor without limit switches
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Pin 6 should be configurable
+    serial.SendLine("configure_digital_in pin=6");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_FALSE(serial.HasOutput("error"));
+}

@@ -28,6 +28,17 @@ static bool RequireConnected(Controller* ctrl, const ParsedCommand& cmd) {
     return true;
 }
 
+// Helper to check if pin is available for reconfiguration
+static bool CheckPinNotReserved(Controller* ctrl, const ParsedCommand& cmd, int32_t pin) {
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode == PinMode::MOTOR_LIMIT) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                 "Pin is reserved for motor limit switch");
+        return false;
+    }
+    return true;
+}
+
 // === Configuration Commands ===
 
 static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
@@ -43,6 +54,8 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
         SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support digital input");
         return;
     }
+
+    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_IN;
@@ -73,6 +86,8 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_OUT;
     slot->digital_out.current_value = cmd.GetBoolOr("initial", false);
@@ -102,6 +117,8 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
         SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support analog input");
         return;
     }
+
+    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::ANALOG_IN;
@@ -137,6 +154,8 @@ static void CmdConfigurePwm(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
+
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::PWM;
     slot->pwm.duty = static_cast<uint16_t>(cmd.GetIntOr("duty", 0));
@@ -164,6 +183,8 @@ static void CmdConfigureHBridge(Controller* ctrl, const ParsedCommand& cmd) {
         SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support H-Bridge");
         return;
     }
+
+    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::H_BRIDGE;
@@ -193,6 +214,8 @@ static void CmdConfigureEndstop(Controller* ctrl, const ParsedCommand& cmd) {
         SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support digital input");
         return;
     }
+
+    if (!CheckPinNotReserved(ctrl, cmd, pin)) return;
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::END_STOP;

@@ -131,6 +131,24 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    // Check for pin conflicts - limit switch pins must not already be configured
+    if (limit_neg != CutterHal::PIN_INVALID) {
+        PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_neg));
+        if (pin->mode != PinMode::UNCONFIGURED && pin->mode != PinMode::MOTOR_LIMIT) {
+            SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                     "limit_neg_pin already configured for another purpose");
+            return;
+        }
+    }
+    if (limit_pos != CutterHal::PIN_INVALID) {
+        PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_pos));
+        if (pin->mode != PinMode::UNCONFIGURED && pin->mode != PinMode::MOTOR_LIMIT) {
+            SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                     "limit_pos_pin already configured for another purpose");
+            return;
+        }
+    }
+
     MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
     memset(slot, 0, sizeof(MotorSlot));
     slot->motor_index = static_cast<uint8_t>(motor);
@@ -155,13 +173,19 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
     slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
 
-    // Configure ClearCore limit switches
+    // Configure ClearCore limit switches and mark pins as reserved
     // ClearCore will internally configure the pin as digital input
     if (limit_neg != CutterHal::PIN_INVALID) {
         CutterHal::SetLimitSwitchNeg(slot->motor_index, static_cast<uint8_t>(limit_neg));
+        PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_neg));
+        pin->mode = PinMode::MOTOR_LIMIT;
+        pin->pin_index = static_cast<uint8_t>(limit_neg);
     }
     if (limit_pos != CutterHal::PIN_INVALID) {
         CutterHal::SetLimitSwitchPos(slot->motor_index, static_cast<uint8_t>(limit_pos));
+        PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_pos));
+        pin->mode = PinMode::MOTOR_LIMIT;
+        pin->pin_index = static_cast<uint8_t>(limit_pos);
     }
 
     // Set motor parameters in HAL

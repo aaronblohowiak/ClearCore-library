@@ -91,6 +91,7 @@ enum class PinMode : uint8_t {
     PWM,
     H_BRIDGE,
     END_STOP,
+    MOTOR_LIMIT,        ///< Reserved for motor limit switch (ClearCore native)
 };
 
 /**
