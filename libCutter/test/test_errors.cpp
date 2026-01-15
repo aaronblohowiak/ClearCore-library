@@ -1,13 +1,194 @@
 /**
  * @file test_errors.cpp
  * @brief Error handling and recovery tests
- *
- * Tests coming in Phase 7.
  */
 
 #include <gtest/gtest.h>
+#include "Cutter.h"
+#include "FakeHal.h"
+#include "TestSerial.h"
 
-// Placeholder test
-TEST(ErrorsPlaceholder, BuildWorks) {
-    EXPECT_TRUE(true);
+using namespace Cutter;
+
+class ErrorTest : public ::testing::Test {
+protected:
+    TestSerial serial;
+    Controller* ctrl;
+
+    void SetUp() override {
+        RESET_HAL();
+        ctrl = new Controller(&serial);
+        // Connect
+        serial.SendLine("ping");
+        ctrl->Update();
+        serial.ClearOutput();
+    }
+
+    void TearDown() override {
+        delete ctrl;
+    }
+};
+
+// === Unknown Command ===
+
+TEST_F(ErrorTest, UnknownCommand) {
+    serial.SendLine("foobar");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Unknown command"));
+    EXPECT_TRUE(serial.HasOutput("command=foobar"));
+}
+
+TEST_F(ErrorTest, UnknownCommandWithSeq) {
+    serial.SendLine("foobar seq=42");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("seq=42"));
+}
+
+// === Epoch Mismatch ===
+
+TEST_F(ErrorTest, EpochMismatch) {
+    serial.SendLine("ping epoch=99");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Epoch mismatch"));
+    EXPECT_TRUE(serial.HasOutput("expected=0"));
+    EXPECT_TRUE(serial.HasOutput("got=99"));
+}
+
+TEST_F(ErrorTest, EpochMatchAfterError) {
+    // Cause an error to increment epoch
+    ctrl->GetStateMachine().EnterError(ErrorCode::INTERNAL_ERROR, "test");
+    EXPECT_EQ(ctrl->GetEpoch(), 1u);
+
+    // Now commands with epoch=0 fail
+    serial.SendLine("ping epoch=0");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Epoch mismatch"));
+    serial.ClearOutput();
+
+    // Commands with epoch=1 succeed
+    serial.SendLine("ping epoch=1");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+// === Missing Parameters ===
+
+TEST_F(ErrorTest, MissingRequiredParam) {
+    serial.SendLine("configure_digital_in");  // Missing pin
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Invalid pin"));
+}
+
+TEST_F(ErrorTest, MissingMotorType) {
+    serial.SendLine("configure_motor motor=0");  // Missing type
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Missing type"));
+}
+
+// === Invalid State ===
+
+TEST_F(ErrorTest, ResetNotInError) {
+    serial.SendLine("reset");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Not in error state"));
+}
+
+TEST_F(ErrorTest, EnableWithoutConfigure) {
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+}
+
+// === Error Recovery ===
+
+TEST_F(ErrorTest, ResetFromError) {
+    // Enter error state
+    ctrl->GetStateMachine().EnterError(ErrorCode::MOTOR_FAULT, "Motor fault");
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+
+    // Reset
+    serial.SendLine("reset");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("epoch=1"));
+    EXPECT_EQ(ctrl->GetState(), State::CONNECTED);
+}
+
+// === Status Command ===
+
+TEST_F(ErrorTest, StatusShowsError) {
+    ctrl->GetStateMachine().EnterError(ErrorCode::MOTOR_FAULT, "Test fault");
+
+    serial.SendLine("status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("state=error"));
+    EXPECT_TRUE(serial.HasOutput("error_code=302"));
+    EXPECT_TRUE(serial.HasOutput("Test fault"));
+}
+
+TEST_F(ErrorTest, StatusShowsEpoch) {
+    serial.SendLine("status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+}
+
+// === Version Command ===
+
+TEST_F(ErrorTest, VersionCommand) {
+    serial.SendLine("version");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("version="));
+    EXPECT_TRUE(serial.HasOutput("protocol="));
+}
+
+// === Pin Not Configured ===
+
+TEST_F(ErrorTest, ReadUnconfiguredPin) {
+    serial.SendLine("read_pin pin=0");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("not configured"));
+}
+
+TEST_F(ErrorTest, WriteToUnconfiguredPin) {
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("not configured"));
+}
+
+// === Motor Not Ready ===
+
+TEST_F(ErrorTest, MoveWithoutEnable) {
+    serial.SendLine("configure_motor motor=0 type=stepper");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
 }

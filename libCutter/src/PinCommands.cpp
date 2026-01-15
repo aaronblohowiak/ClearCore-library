@@ -1,8 +1,409 @@
 /**
  * @file PinCommands.cpp
  * @brief Pin command handlers
- *
- * Stub file - implementation coming in Phase 3.
  */
 
-// Placeholder for Phase 3 implementation
+#include "Cutter.h"
+#include <cstring>
+
+namespace Cutter {
+
+// Helper to send error response
+static void SendError(Controller* ctrl, const ParsedCommand& cmd,
+                      ErrorCode code, const char* message) {
+    ctrl->Response().Error(static_cast<uint32_t>(code), message);
+    if (cmd.has_seq) {
+        ctrl->Response().Param("seq", cmd.seq);
+    }
+    ctrl->SendResponse();
+}
+
+// Helper to check state for configuration commands
+static bool RequireConnected(Controller* ctrl, const ParsedCommand& cmd) {
+    State state = ctrl->GetState();
+    if (state == State::UNCONNECTED) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_STATE, "Not connected");
+        return false;
+    }
+    return true;
+}
+
+// === Configuration Commands ===
+
+static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireConnected(ctrl, cmd)) return;
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    if (!PinSupports(static_cast<uint8_t>(pin), PinCap::DIGITAL_IN)) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support digital input");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    slot->mode = PinMode::DIGITAL_IN;
+    slot->digital_in.report_changes = cmd.GetBoolOr("report_changes", false);
+    slot->digital_in.last_value = CutterHal::ReadDigitalPin(slot->pin_index);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireConnected(ctrl, cmd)) return;
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    if (!PinSupports(static_cast<uint8_t>(pin), PinCap::DIGITAL_OUT)) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support digital output");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    slot->mode = PinMode::DIGITAL_OUT;
+    slot->digital_out.current_value = cmd.GetBoolOr("initial", false);
+    CutterHal::WriteDigitalPin(slot->pin_index, slot->digital_out.current_value);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireConnected(ctrl, cmd)) return;
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    if (!PinSupports(static_cast<uint8_t>(pin), PinCap::ANALOG_IN)) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support analog input");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    slot->mode = PinMode::ANALOG_IN;
+    slot->analog_in.threshold_low = static_cast<int16_t>(cmd.GetIntOr("threshold_low", 0));
+    slot->analog_in.threshold_high = static_cast<int16_t>(cmd.GetIntOr("threshold_high", 4095));
+    slot->analog_in.report_threshold = cmd.GetBoolOr("report_threshold", false);
+    slot->analog_in.sample_interval_ms = static_cast<uint32_t>(cmd.GetIntOr("sample_interval", 100));
+    slot->analog_in.last_value = CutterHal::ReadAnalogPin(slot->pin_index);
+    slot->analog_in.last_sample_time = CutterHal::Milliseconds();
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdConfigurePwm(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireConnected(ctrl, cmd)) return;
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    if (!PinSupports(static_cast<uint8_t>(pin), PinCap::PWM)) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support PWM");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    slot->mode = PinMode::PWM;
+    slot->pwm.duty = static_cast<uint16_t>(cmd.GetIntOr("duty", 0));
+    slot->pwm.frequency = static_cast<uint32_t>(cmd.GetIntOr("frequency", 1000));
+
+    CutterHal::SetPwmFrequency(slot->pin_index, slot->pwm.frequency);
+    CutterHal::SetPwmDuty(slot->pin_index, slot->pwm.duty);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdConfigureHBridge(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireConnected(ctrl, cmd)) return;
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    if (!PinSupports(static_cast<uint8_t>(pin), PinCap::H_BRIDGE)) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support H-Bridge");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    slot->mode = PinMode::H_BRIDGE;
+    slot->hbridge.value = static_cast<int16_t>(cmd.GetIntOr("value", 0));
+    slot->hbridge.tone_active = false;
+    slot->hbridge.tone_freq = 0;
+    slot->hbridge.tone_amplitude = 0;
+
+    CutterHal::SetHBridgeValue(slot->pin_index, slot->hbridge.value);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdConfigureEndstop(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireConnected(ctrl, cmd)) return;
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    if (!PinSupports(static_cast<uint8_t>(pin), PinCap::DIGITAL_IN)) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY, "Pin does not support digital input");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    slot->mode = PinMode::END_STOP;
+    slot->end_stop.active_high = cmd.GetBoolOr("active_high", true);
+    slot->end_stop.last_value = CutterHal::ReadDigitalPin(slot->pin_index);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+// === Operation Commands ===
+
+static void CmdReadPin(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode == PinMode::UNCONFIGURED) {
+        SendError(ctrl, cmd, ErrorCode::PIN_NOT_CONFIGURED, "Pin not configured");
+        return;
+    }
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+
+    switch (slot->mode) {
+        case PinMode::DIGITAL_IN:
+        case PinMode::END_STOP:
+            ctrl->Response().Param("value", CutterHal::ReadDigitalPin(slot->pin_index));
+            break;
+        case PinMode::DIGITAL_OUT:
+            ctrl->Response().Param("value", slot->digital_out.current_value);
+            break;
+        case PinMode::ANALOG_IN:
+            ctrl->Response().Param("value", static_cast<int32_t>(CutterHal::ReadAnalogPin(slot->pin_index)));
+            break;
+        case PinMode::PWM:
+            ctrl->Response().Param("duty", static_cast<int32_t>(slot->pwm.duty));
+            break;
+        case PinMode::H_BRIDGE:
+            ctrl->Response().Param("value", static_cast<int32_t>(slot->hbridge.value));
+            break;
+        default:
+            break;
+    }
+    ctrl->SendResponse();
+}
+
+static void CmdWritePin(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode != PinMode::DIGITAL_OUT) {
+        SendError(ctrl, cmd, ErrorCode::PIN_NOT_CONFIGURED, "Pin not configured as digital output");
+        return;
+    }
+
+    bool value;
+    if (!cmd.GetBool("value", &value)) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing value parameter");
+        return;
+    }
+
+    slot->digital_out.current_value = value;
+    CutterHal::WriteDigitalPin(slot->pin_index, value);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin).Param("value", value);
+    ctrl->SendResponse();
+}
+
+static void CmdSetPwm(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode != PinMode::PWM) {
+        SendError(ctrl, cmd, ErrorCode::PIN_NOT_CONFIGURED, "Pin not configured as PWM");
+        return;
+    }
+
+    int32_t duty;
+    if (cmd.GetInt("duty", &duty)) {
+        slot->pwm.duty = static_cast<uint16_t>(duty);
+        CutterHal::SetPwmDuty(slot->pin_index, slot->pwm.duty);
+    }
+
+    int32_t freq;
+    if (cmd.GetInt("frequency", &freq)) {
+        slot->pwm.frequency = static_cast<uint32_t>(freq);
+        CutterHal::SetPwmFrequency(slot->pin_index, slot->pwm.frequency);
+    }
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdSetHBridge(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode != PinMode::H_BRIDGE) {
+        SendError(ctrl, cmd, ErrorCode::PIN_NOT_CONFIGURED, "Pin not configured as H-Bridge");
+        return;
+    }
+
+    int32_t value;
+    if (!cmd.GetInt("value", &value)) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing value parameter");
+        return;
+    }
+
+    slot->hbridge.value = static_cast<int16_t>(value);
+    CutterHal::SetHBridgeValue(slot->pin_index, slot->hbridge.value);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdStartTone(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode != PinMode::H_BRIDGE) {
+        SendError(ctrl, cmd, ErrorCode::PIN_NOT_CONFIGURED, "Pin not configured as H-Bridge");
+        return;
+    }
+
+    int32_t freq, amplitude;
+    if (!cmd.GetInt("frequency", &freq)) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing frequency parameter");
+        return;
+    }
+    if (!cmd.GetInt("amplitude", &amplitude)) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing amplitude parameter");
+        return;
+    }
+
+    slot->hbridge.tone_active = true;
+    slot->hbridge.tone_freq = static_cast<uint16_t>(freq);
+    slot->hbridge.tone_amplitude = static_cast<int16_t>(amplitude);
+    CutterHal::StartTone(slot->pin_index, slot->hbridge.tone_freq, slot->hbridge.tone_amplitude);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+static void CmdStopTone(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (slot->mode != PinMode::H_BRIDGE) {
+        SendError(ctrl, cmd, ErrorCode::PIN_NOT_CONFIGURED, "Pin not configured as H-Bridge");
+        return;
+    }
+
+    slot->hbridge.tone_active = false;
+    CutterHal::StopTone(slot->pin_index);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    ctrl->SendResponse();
+}
+
+// === Dispatch Function ===
+
+void DispatchPinCommand(Controller* ctrl, const ParsedCommand& cmd) {
+    if (strcmp(cmd.name, "configure_digital_in") == 0) {
+        CmdConfigureDigitalIn(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_digital_out") == 0) {
+        CmdConfigureDigitalOut(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_analog_in") == 0) {
+        CmdConfigureAnalogIn(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_pwm") == 0) {
+        CmdConfigurePwm(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_hbridge") == 0) {
+        CmdConfigureHBridge(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_endstop") == 0) {
+        CmdConfigureEndstop(ctrl, cmd);
+    } else if (strcmp(cmd.name, "read_pin") == 0) {
+        CmdReadPin(ctrl, cmd);
+    } else if (strcmp(cmd.name, "write_pin") == 0) {
+        CmdWritePin(ctrl, cmd);
+    } else if (strcmp(cmd.name, "set_pwm") == 0) {
+        CmdSetPwm(ctrl, cmd);
+    } else if (strcmp(cmd.name, "set_hbridge") == 0) {
+        CmdSetHBridge(ctrl, cmd);
+    } else if (strcmp(cmd.name, "start_tone") == 0) {
+        CmdStartTone(ctrl, cmd);
+    } else if (strcmp(cmd.name, "stop_tone") == 0) {
+        CmdStopTone(ctrl, cmd);
+    }
+}
+
+}  // namespace Cutter

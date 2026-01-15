@@ -2,7 +2,8 @@
  * @file CommandDispatcher.cpp
  * @brief Command routing implementation
  *
- * Stub file - implementation coming in Phase 2.
+ * Command dispatching is implemented directly in Cutter.cpp.
+ * This file exists for potential future separation.
  */
 
-// Placeholder for Phase 2 implementation
+// Command dispatch logic is in Cutter::Controller::DispatchCommand()

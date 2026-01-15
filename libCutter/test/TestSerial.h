@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include "Cutter.h"
 
 /**
  * @brief Fake serial port for testing Cutter
@@ -21,8 +22,10 @@
  *   cutter.Update();
  *   EXPECT_EQ(serial.LastResponse(), "ok");
  */
-class TestSerial {
+class TestSerial : public Cutter::ISerial {
 public:
+    ~TestSerial() override = default;
+
     /**
      * @brief Send a command line (as if host sent it)
      * @param line Command string (newline will be appended)
@@ -40,13 +43,13 @@ public:
         input_buffer_ += data;
     }
 
-    // === ISerial-like interface for Cutter to read from ===
+    // === ISerial interface implementation ===
 
     /**
      * @brief Get next character from input buffer
      * @return Character or -1 if buffer empty
      */
-    int16_t CharGet() {
+    int16_t CharGet() override {
         if (input_pos_ >= input_buffer_.size()) {
             return -1;
         }
@@ -68,7 +71,7 @@ public:
      * @brief Check if input data is available
      * @return Number of bytes available
      */
-    int AvailableForRead() {
+    int AvailableForRead() override {
         return static_cast<int>(input_buffer_.size() - input_pos_);
     }
 
@@ -87,7 +90,7 @@ public:
      * @param str String to send
      * @return true (always succeeds in test)
      */
-    bool Send(const char* str) {
+    bool Send(const char* str) override {
         output_buffer_ += str;
         return true;
     }
