@@ -138,7 +138,8 @@ struct DigitalOutState {
     bool current_value;
     bool on_error_value;        ///< Value to set when entering error state
     bool on_error_enabled;      ///< Apply on_error_value on error
-    uint32_t max_raised_ms;     ///< Max time pin can be high (0=disabled)
+    uint32_t default_max_ms;    ///< Default timeout from configure (used if max_ms not in write)
+    uint32_t max_raised_ms;     ///< Active timeout for current high (0=disabled)
     uint32_t raise_start_time;  ///< When pin was last set high
     CommandId set_id;           ///< Command that set pin high (for timeout correlation)
 };

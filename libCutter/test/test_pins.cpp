@@ -296,12 +296,12 @@ TEST_F(PinTest, DigitalInputErrorTriggerWithInvert) {
 // === Digital Output Timeout ===
 
 TEST_F(PinTest, DigitalOutputTimeout) {
-    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    serial.SendLine("configure_digital_out pin=0");
     ctrl->Update();
     serial.ClearOutput();
 
-    // Set pin high
-    serial.SendLine("write_pin pin=0 value=1");
+    // Set pin high with timeout
+    serial.SendLine("write_pin pin=0 value=1 max_ms=100");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -319,12 +319,15 @@ TEST_F(PinTest, DigitalOutputTimeout) {
     EXPECT_EQ(ctrl->GetState(), State::ERROR);
 }
 
-TEST_F(PinTest, DigitalOutputNoTimeoutWhenLow) {
-    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+TEST_F(PinTest, DigitalOutputNoTimeoutWhenNoMaxMs) {
+    serial.SendLine("configure_digital_out pin=0");
     ctrl->Update();
     serial.ClearOutput();
 
-    // Pin stays low - no timeout should occur
+    // Set pin high without max_ms - no timeout should occur
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+
     ADVANCE_TIME(200);
     ctrl->Update();
 
@@ -333,12 +336,12 @@ TEST_F(PinTest, DigitalOutputNoTimeoutWhenLow) {
 
 TEST_F(PinTest, DigitalOutputTimeoutResetsOnReRaise) {
     // Verify that setting pin low then high again resets the timeout timer
-    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    serial.SendLine("configure_digital_out pin=0");
     ctrl->Update();
     serial.ClearOutput();
 
-    // Set pin high
-    serial.SendLine("write_pin pin=0 value=1");
+    // Set pin high with timeout
+    serial.SendLine("write_pin pin=0 value=1 max_ms=100");
     ctrl->Update();
 
     // Wait 80ms (within timeout)
@@ -355,8 +358,8 @@ TEST_F(PinTest, DigitalOutputTimeoutResetsOnReRaise) {
     ctrl->Update();
     EXPECT_NE(ctrl->GetState(), State::ERROR);
 
-    // Set pin high again - timer should reset
-    serial.SendLine("write_pin pin=0 value=1");
+    // Set pin high again with timeout - timer should reset
+    serial.SendLine("write_pin pin=0 value=1 max_ms=100");
     ctrl->Update();
 
     // Wait 80ms from second raise (would be 210ms from first raise)
@@ -369,6 +372,74 @@ TEST_F(PinTest, DigitalOutputTimeoutResetsOnReRaise) {
     ctrl->Update();
     EXPECT_EQ(ctrl->GetState(), State::ERROR);
     EXPECT_TRUE(serial.HasEvent("error"));
+}
+
+TEST_F(PinTest, DigitalOutputReRaiseWithMaxMsZeroClearsTimeout) {
+    // Verify that raising with max_ms=0 clears any previous timeout
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Set pin high with timeout
+    serial.SendLine("write_pin pin=0 value=1 max_ms=100");
+    ctrl->Update();
+
+    // Wait 50ms
+    ADVANCE_TIME(50);
+    ctrl->Update();
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+
+    // Re-raise with explicit max_ms=0 - should clear the timeout
+    serial.SendLine("write_pin pin=0 value=1 max_ms=0");
+    ctrl->Update();
+
+    // Wait well beyond original timeout - should NOT error
+    ADVANCE_TIME(200);
+    ctrl->Update();
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, DigitalOutputUsesConfiguredDefault) {
+    // Verify that write without max_ms uses configured default
+    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Set pin high without max_ms - should use default of 100ms
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+
+    // Wait 50ms - should not timeout yet
+    ADVANCE_TIME(50);
+    ctrl->Update();
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+
+    // Wait another 60ms (110ms total) - should timeout
+    ADVANCE_TIME(60);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+    EXPECT_TRUE(serial.HasEvent("error"));
+}
+
+TEST_F(PinTest, DigitalOutputPerWriteOverridesDefault) {
+    // Verify that per-write max_ms overrides configured default
+    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Set pin high with longer timeout than default
+    serial.SendLine("write_pin pin=0 value=1 max_ms=200");
+    ctrl->Update();
+
+    // Wait 150ms - would timeout with default but not with override
+    ADVANCE_TIME(150);
+    ctrl->Update();
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+
+    // Wait another 60ms (210ms total) - NOW should timeout
+    ADVANCE_TIME(60);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
 }
 
 // === Digital Output On Error ===
@@ -461,9 +532,9 @@ TEST_F(PinTest, DigitalOutputTimeoutRollover) {
     // Set time near UINT32_MAX
     g_fake.time_ms = 0xFFFFFF00;
 
-    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    serial.SendLine("configure_digital_out pin=0");
     ctrl->Update();
-    serial.SendLine("write_pin pin=0 value=1");
+    serial.SendLine("write_pin pin=0 value=1 max_ms=100");
     ctrl->Update();
     serial.ClearOutput();
 

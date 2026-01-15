@@ -78,7 +78,8 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
     slot->digital_out.current_value = cmd.GetBoolOr("initial", false);
     slot->digital_out.on_error_enabled = cmd.HasParam("on_error");
     slot->digital_out.on_error_value = cmd.GetBoolOr("on_error", false);
-    slot->digital_out.max_raised_ms = static_cast<uint32_t>(cmd.GetIntOr("max_raised_ms", 0));
+    slot->digital_out.default_max_ms = static_cast<uint32_t>(cmd.GetIntOr("max_raised_ms", 0));
+    slot->digital_out.max_raised_ms = 0;
     slot->digital_out.raise_start_time = 0;
     CutterHal::WriteDigitalPin(slot->pin_index, slot->digital_out.current_value);
 
@@ -267,14 +268,25 @@ static void CmdWritePin(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    // Get timeout: use explicit max_ms if provided, otherwise use configured default
+    uint32_t max_ms = slot->digital_out.default_max_ms;
+    if (cmd.HasParam("max_ms")) {
+        cmd.GetUInt("max_ms", &max_ms);
+    }
+
     slot->digital_out.current_value = value;
     CutterHal::WriteDigitalPin(slot->pin_index, value);
 
-    // Track when pin was set high for timeout checking
-    if (value && slot->digital_out.max_raised_ms > 0) {
-        slot->digital_out.raise_start_time = CutterHal::Milliseconds();
-        slot->digital_out.set_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
-    } else if (!value) {
+    // Update timeout tracking
+    if (value) {
+        slot->digital_out.max_raised_ms = max_ms;
+        if (max_ms > 0) {
+            slot->digital_out.raise_start_time = CutterHal::Milliseconds();
+            slot->digital_out.set_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
+        } else {
+            slot->digital_out.raise_start_time = 0;
+        }
+    } else {
         slot->digital_out.raise_start_time = 0;
     }
 
