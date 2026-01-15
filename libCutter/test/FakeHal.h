@@ -76,12 +76,16 @@ struct FakeHalState {
     /**
      * @brief Simulate motor move completion
      * @param motor Motor index (0-3)
+     *
+     * Sets steps_complete=true and HLFB=ASSERTED. For SDSK motors,
+     * both conditions are required for move completion.
      */
     void CompleteMotorMove(uint8_t motor) {
         if (motor < 4) {
             motor_position[motor] = motor_target[motor];
             motor_moving[motor] = false;
             motor_steps_complete[motor] = true;
+            hlfb_state[motor] = 1;  // HLFB_ASSERTED - motor in position
         }
     }
 

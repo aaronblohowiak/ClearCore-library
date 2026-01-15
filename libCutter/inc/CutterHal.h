@@ -164,6 +164,14 @@ void SetMotorPosition(uint8_t motor, int32_t position);
 bool StepsComplete(uint8_t motor);
 
 /**
+    \brief HLFB state constants (ClearPath motors)
+**/
+constexpr uint8_t HLFB_DEASSERTED = 0;      ///< Not in position / torque limit hit
+constexpr uint8_t HLFB_ASSERTED = 1;        ///< In position (move complete)
+constexpr uint8_t HLFB_HAS_MEASUREMENT = 2; ///< PWM mode with speed/torque measurement
+constexpr uint8_t HLFB_UNKNOWN = 3;         ///< State unknown / transitioning
+
+/**
     \brief Get HLFB state for ClearPath motors
 
     \param[in] motor Motor index (0-3)

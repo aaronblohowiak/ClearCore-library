@@ -583,3 +583,68 @@ TEST_F(MotorTest, SoftLimitEventIncludesEpoch) {
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
     EXPECT_TRUE(serial.HasOutput("seq=55"));
 }
+
+// === SDSK Move Completion with HLFB ===
+
+TEST_F(MotorTest, SdskMoveWaitsForHlfbAsserted) {
+    // Configure SDSK motor
+    serial.SendLine("configure_sdsk motor=0 vel_max=20000 accel_max=200000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok")) << "configure_sdsk output: " << serial.GetOutput();
+    serial.ClearOutput();
+
+    SET_HLFB(0, 1);  // HLFB_ASSERTED - motor ready
+    SET_MOTOR_READY(0, true);  // Motor is ready (enabled and not faulted)
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok")) << "enable output: " << serial.GetOutput();
+    serial.ClearOutput();
+
+    // Update again to process HLFB and transition from ENABLING to READY
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetState(), State::READY) << "State after enable: " << static_cast<int>(ctrl->GetState());
+
+    // Start a move
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok")) << "move output: " << serial.GetOutput();
+    serial.ClearOutput();
+
+    // Steps complete but HLFB not asserted yet (motor still settling)
+    g_fake.motor_steps_complete[0] = true;
+    g_fake.hlfb_state[0] = 0;  // HLFB_DEASSERTED - motor not in position
+    ctrl->Update();
+
+    // Done event should NOT have fired yet
+    EXPECT_FALSE(serial.HasEvent("done"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+
+    // Now HLFB asserts (motor reached position)
+    g_fake.hlfb_state[0] = 1;  // HLFB_ASSERTED
+    ctrl->Update();
+
+    // Done event should fire now
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, StepperMoveCompletesWithoutHlfb) {
+    // Configure generic stepper
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Start a move
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Steps complete - HLFB state doesn't matter for generic steppers
+    g_fake.motor_steps_complete[0] = true;
+    g_fake.hlfb_state[0] = 0;  // HLFB not asserted (doesn't matter)
+    ctrl->Update();
+
+    // Done event should fire immediately when steps complete
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}

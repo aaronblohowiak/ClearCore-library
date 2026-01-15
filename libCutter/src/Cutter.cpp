@@ -462,25 +462,35 @@ void Controller::CheckMotors() {
         }
 
         // Check for move completion
+        // For SDSK/ClearPath: steps must be complete AND HLFB must be asserted (motor in position)
+        // For generic steppers: just steps complete (open-loop, no position feedback)
         if (motor.moving && CutterHal::StepsComplete(motor.motor_index)) {
-            motor.moving = false;
-            m_response.Event("done")
-                .Param("motor", static_cast<int32_t>(motor.motor_index));
-            if (motor.move_id.has_epoch) m_response.Param("epoch", motor.move_id.epoch);
-            m_response.Param("seq", motor.move_id.seq)
-                .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
-            SendResponse();
-
-            // If no motors are moving, transition back to READY
-            bool any_moving = false;
-            for (size_t j = 0; j < NUM_MOTORS; j++) {
-                if (m_motors[j].moving) {
-                    any_moving = true;
-                    break;
-                }
+            bool move_complete = true;
+            if (motor.type == MotorType::CLEARPATH) {
+                // SDSK needs HLFB asserted to confirm motor actually reached position
+                move_complete = (CutterHal::GetHlfbState(motor.motor_index) == CutterHal::HLFB_ASSERTED);
             }
-            if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
-                m_stateMachine.TransitionTo(State::READY);
+
+            if (move_complete) {
+                motor.moving = false;
+                m_response.Event("done")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index));
+                if (motor.move_id.has_epoch) m_response.Param("epoch", motor.move_id.epoch);
+                m_response.Param("seq", motor.move_id.seq)
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
+                SendResponse();
+
+                // If no motors are moving, transition back to READY
+                bool any_moving = false;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].moving) {
+                        any_moving = true;
+                        break;
+                    }
+                }
+                if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                    m_stateMachine.TransitionTo(State::READY);
+                }
             }
         }
 
