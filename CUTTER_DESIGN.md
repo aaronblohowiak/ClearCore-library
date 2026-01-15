@@ -211,6 +211,7 @@ struct AnalogInState {
 
 struct PwmState {
     bool stop_on_error;
+    int16_t amplitude;               // Scaling factor (default INT16_MAX)
     uint16_t duty;                   // Current duty cycle
     uint32_t frequency;
 };
@@ -1037,7 +1038,7 @@ ClearCore has 256KB SRAM, so this is well within budget.
 - `DigitalInState`: 5 bytes
 - `DigitalOutState`: 10 bytes
 - `AnalogInState`: 21 bytes (largest)
-- `PwmState`: 7 bytes
+- `PwmState`: 9 bytes
 - `HBridgeState`: 9 bytes
 - `EndStopState`: 5 bytes
 
