@@ -159,6 +159,20 @@ uint8_t GetHlfbState(uint8_t motor);
  */
 bool IsMotorReady(uint8_t motor);
 
+/**
+ * @brief Check if motor is in hardware fault state
+ * @param motor Motor index (0-3)
+ * @return true if motor has a fault
+ */
+bool IsMotorInFault(uint8_t motor);
+
+/**
+ * @brief Check if digital output pin is in hardware fault (overcurrent)
+ * @param pin Pin index (0-5 for outputs)
+ * @return true if pin is in fault state
+ */
+bool IsPinInFault(uint8_t pin);
+
 // === Timing ===
 
 /**

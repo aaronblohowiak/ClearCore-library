@@ -454,3 +454,36 @@ TEST_F(PinTest, AnalogReportingRollover) {
     EXPECT_TRUE(serial.HasEvent("analog"));
     EXPECT_TRUE(serial.HasOutput("value=2000"));
 }
+
+// === Hardware Fault Tests ===
+
+TEST_F(PinTest, DigitalOutputOvercurrent) {
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Simulate overcurrent fault
+    SET_PIN_FAULT(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasOutput("code=203"));  // PIN_OVERCURRENT
+    EXPECT_TRUE(serial.HasOutput("Pin overcurrent"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, NoFaultWhenPinNotFaulted) {
+    serial.SendLine("configure_digital_out pin=0");
+    ctrl->Update();
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // No fault set
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("error"));
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}

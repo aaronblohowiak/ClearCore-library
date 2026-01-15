@@ -258,3 +258,40 @@ TEST_F(MotorTest, MoveRequiresReady) {
     EXPECT_TRUE(serial.HasOutput("error"));
     EXPECT_TRUE(serial.HasOutput("not enabled") || serial.HasOutput("Not in ready"));
 }
+
+// === Hardware Fault Tests ===
+
+TEST_F(MotorTest, MotorHardwareFault) {
+    serial.SendLine("configure_stepper motor=0");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Simulate motor hardware fault
+    SET_MOTOR_FAULT(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasOutput("code=302"));  // MOTOR_FAULT
+    EXPECT_TRUE(serial.HasOutput("Motor hardware fault"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(MotorTest, NoFaultWhenMotorHealthy) {
+    serial.SendLine("configure_stepper motor=0");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // No fault set - motor is healthy
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("error"));
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}

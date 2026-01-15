@@ -53,6 +53,10 @@ enum class ErrorCode : uint32_t {
     INVALID_PIN = 200,
     PIN_NOT_CONFIGURED = 201,
     PIN_CAPABILITY = 202,
+    PIN_OVERCURRENT = 203,
+    PIN_TIMEOUT = 204,
+    PIN_ERROR_TRIGGER = 205,
+    ANALOG_THRESHOLD = 206,
 
     // Motor errors (300-399)
     INVALID_MOTOR = 300,

@@ -208,6 +208,25 @@ bool IsMotorReady(uint8_t motor) {
     return false;
 }
 
+bool IsMotorInFault(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->IsInHwFault();
+    }
+    return false;
+}
+
+bool IsPinInFault(uint8_t pin) {
+    // Only IO-0 to IO-5 have overcurrent detection
+    if (pin <= 5) {
+        auto* conn = static_cast<ClearCore::DigitalInOut*>(GetConnector(pin));
+        if (conn) {
+            return conn->IsInHwFault();
+        }
+    }
+    return false;
+}
+
 uint32_t Milliseconds() {
     return ClearCore::SysTiming::Instance().Milliseconds();
 }

@@ -188,9 +188,9 @@ void Controller::CheckPins() {
 
                 // Check error trigger
                 if (pin.digital_in.error_trigger_enabled && val == pin.digital_in.error_trigger_value) {
-                    state_machine_.EnterError(ErrorCode::PIN_NOT_CONFIGURED, "Digital input error trigger");
+                    state_machine_.EnterError(ErrorCode::PIN_ERROR_TRIGGER, "Digital input error trigger");
                     response_.Event("error")
-                        .Param("code", static_cast<uint32_t>(ErrorCode::PIN_NOT_CONFIGURED))
+                        .Param("code", static_cast<uint32_t>(ErrorCode::PIN_ERROR_TRIGGER))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
                         .Param("message", "Error trigger activated");
                     SendResponse();
@@ -222,12 +222,30 @@ void Controller::CheckPins() {
             }
 
             case PinMode::DIGITAL_OUT: {
+                // Check hardware fault (overcurrent)
+                if (CutterHal::IsPinInFault(pin.pin_index)) {
+                    state_machine_.EnterError(ErrorCode::PIN_OVERCURRENT, "Pin overcurrent");
+                    response_.Event("error")
+                        .Param("code", static_cast<uint32_t>(ErrorCode::PIN_OVERCURRENT))
+                        .Param("pin", static_cast<int32_t>(pin.pin_index))
+                        .Param("message", "Pin overcurrent fault");
+                    SendResponse();
+                    // Stop all motors on error
+                    for (size_t j = 0; j < NUM_MOTORS; j++) {
+                        if (motors_[j].type != MotorType::UNCONFIGURED) {
+                            CutterHal::StopMotor(motors_[j].motor_index, true);
+                            motors_[j].moving = false;
+                        }
+                    }
+                    return;
+                }
+
                 // Check timeout
                 if (pin.digital_out.max_raised_ms > 0 && pin.digital_out.current_value) {
                     if ((now - pin.digital_out.raise_start_time) > pin.digital_out.max_raised_ms) {
-                        state_machine_.EnterError(ErrorCode::PIN_NOT_CONFIGURED, "Digital output timeout");
+                        state_machine_.EnterError(ErrorCode::PIN_TIMEOUT, "Digital output timeout");
                         response_.Event("error")
-                            .Param("code", static_cast<uint32_t>(ErrorCode::PIN_NOT_CONFIGURED))
+                            .Param("code", static_cast<uint32_t>(ErrorCode::PIN_TIMEOUT))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("message", "Output timeout");
                         SendResponse();
@@ -250,9 +268,9 @@ void Controller::CheckPins() {
                 // Check error thresholds
                 if (pin.analog_in.error_threshold_enabled) {
                     if (val < pin.analog_in.error_threshold_low || val > pin.analog_in.error_threshold_high) {
-                        state_machine_.EnterError(ErrorCode::PIN_NOT_CONFIGURED, "Analog error threshold");
+                        state_machine_.EnterError(ErrorCode::ANALOG_THRESHOLD, "Analog error threshold");
                         response_.Event("error")
-                            .Param("code", static_cast<uint32_t>(ErrorCode::PIN_NOT_CONFIGURED))
+                            .Param("code", static_cast<uint32_t>(ErrorCode::ANALOG_THRESHOLD))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("value", static_cast<int32_t>(val))
                             .Param("message", "Analog threshold exceeded");
@@ -295,6 +313,24 @@ void Controller::CheckMotors() {
     for (size_t i = 0; i < NUM_MOTORS; i++) {
         MotorSlot& motor = motors_[i];
         if (motor.type == MotorType::UNCONFIGURED) continue;
+
+        // Check for hardware fault
+        if (CutterHal::IsMotorInFault(motor.motor_index)) {
+            state_machine_.EnterError(ErrorCode::MOTOR_FAULT, "Motor hardware fault");
+            response_.Event("error")
+                .Param("code", static_cast<uint32_t>(ErrorCode::MOTOR_FAULT))
+                .Param("motor", static_cast<int32_t>(motor.motor_index))
+                .Param("message", "Motor hardware fault");
+            SendResponse();
+            // Stop all motors
+            for (size_t j = 0; j < NUM_MOTORS; j++) {
+                if (motors_[j].type != MotorType::UNCONFIGURED) {
+                    CutterHal::StopMotor(motors_[j].motor_index, true);
+                    motors_[j].moving = false;
+                }
+            }
+            return;
+        }
 
         // Check for HLFB state changes (ClearPath only)
         if (motor.type == MotorType::CLEARPATH && motor.enabled) {

@@ -27,6 +27,10 @@ struct FakeHalState {
     uint16_t tone_freq[2] = {};           // Tone frequency
     int16_t tone_amplitude[2] = {};       // Tone amplitude
 
+    // === Fault State ===
+    bool pin_fault[6] = {};               // Hardware fault on pins 0-5
+    bool motor_fault[4] = {};             // Hardware fault on motors 0-3
+
     // === Motor State ===
     bool motor_enabled[4] = {};
     bool motor_moving[4] = {};
@@ -131,3 +135,5 @@ extern FakeHalState g_fake;
 #define COMPLETE_MOVE(motor)    g_fake.CompleteMotorMove(motor)
 #define SET_HLFB(motor, state)  g_fake.SetHlfbState(motor, state)
 #define SET_MOTOR_READY(m, r)   g_fake.SetMotorReady(m, r)
+#define SET_PIN_FAULT(pin, f)   g_fake.pin_fault[pin] = (f)
+#define SET_MOTOR_FAULT(m, f)   g_fake.motor_fault[m] = (f)

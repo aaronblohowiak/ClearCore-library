@@ -167,6 +167,20 @@ bool IsMotorReady(uint8_t motor) {
     return false;
 }
 
+bool IsMotorInFault(uint8_t motor) {
+    if (motor < 4) {
+        return g_fake.motor_fault[motor];
+    }
+    return false;
+}
+
+bool IsPinInFault(uint8_t pin) {
+    if (pin < 6) {
+        return g_fake.pin_fault[pin];
+    }
+    return false;
+}
+
 uint32_t Milliseconds() {
     return g_fake.time_ms;
 }
