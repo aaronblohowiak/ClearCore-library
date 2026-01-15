@@ -4,62 +4,62 @@ This document compares Cutter with Teknic's official CCCP example project.
 
 ## Overview
 
-| Aspect | CCCP | Cutter |
-|--------|------|--------|
-| Architecture | Single-file example (~870 LOC) | Library with state machine, HAL abstraction |
-| Command Format | Single letter + number (`e0`, `m1 1000`) | Named commands with key=value (`enable motor=0`) |
-| Motor Types | ClearPath Step+Dir only | ClearPath SDSK + Generic Steppers |
-| Homing | External (MSP configured) | Built-in endstop + hard-stop homing |
-| Events | None (polling only) | Async events for state changes |
-| State Machine | None | 7 states with epoch tracking |
-| Error Handling | Numeric codes | Structured error responses + error state |
-| Testability | Hardware only | HAL abstraction enables unit testing |
+| Aspect         | CCCP                                       | Cutter                                              |
+|----------------|--------------------------------------------|-----------------------------------------------------|
+| Architecture   | Single-file example (~870 LOC)             | Library with state machine, HAL abstraction         |
+| Command Format | Single letter + number (`e0`, `m1 1000`)   | Named commands with key=value (`enable motor=0`)    |
+| Motor Types    | ClearPath Step+Dir only                    | ClearPath SDSK + Generic Steppers                   |
+| Homing         | External (MSP configured)                  | Built-in endstop + hard-stop homing                 |
+| Events         | None (polling only)                        | Async events for state changes                      |
+| State Machine  | None                                       | 7 states with epoch tracking                        |
+| Error Handling | Numeric codes                              | Structured error responses + error state            |
+| Testability    | Hardware only                              | HAL abstraction enables unit testing                |
 
 ## Command Comparison
 
 ### Motor Commands
 
-| Function | CCCP | Cutter |
-|----------|------|--------|
-| Enable | `e0` | `enable motor=0` |
-| Disable | `d0` | `disable motor=0` |
-| Position move | `m0 1000` | `move motor=0 steps=1000` or `move motor=0 position=1000` |
-| Velocity move | `v0 500` | `move_velocity motor=0 velocity=500` |
-| Stop | (none) | `stop motor=0` |
-| Query position | `q0p` | (via events or `status`) |
-| Query velocity | `q0v` | (via events) |
-| Query status | `q0s` | `status` |
-| Set velocity limit | `l0v 1000` | `configure_sdsk motor=0 vel_max=1000` |
-| Set accel limit | `l0a 50000` | `configure_sdsk motor=0 accel_max=50000` |
-| Clear alerts | `c0` | `reset` (from error state) |
-| Zero position | `z0` | `set_position motor=0 position=0` |
-| Home | (none - MSP only) | `home motor=0` |
-| Enable all + home | (none) | `enable_all` |
+| Function           | CCCP               | Cutter                                                      |
+|--------------------|--------------------|-------------------------------------------------------------|
+| Enable             | `e0`               | `enable motor=0`                                            |
+| Disable            | `d0`               | `disable motor=0`                                           |
+| Position move      | `m0 1000`          | `move motor=0 steps=1000` or `move motor=0 position=1000`   |
+| Velocity move      | `v0 500`           | `move_velocity motor=0 velocity=500`                        |
+| Stop               | (none)             | `stop motor=0`                                              |
+| Query position     | `q0p`              | (via events or `status`)                                    |
+| Query velocity     | `q0v`              | (via events)                                                |
+| Query status       | `q0s`              | `status`                                                    |
+| Set velocity limit | `l0v 1000`         | `configure_sdsk motor=0 vel_max=1000`                       |
+| Set accel limit    | `l0a 50000`        | `configure_sdsk motor=0 accel_max=50000`                    |
+| Clear alerts       | `c0`               | `reset` (from error state)                                  |
+| Zero position      | `z0`               | `set_position motor=0 position=0`                           |
+| Home               | (none - MSP only)  | `home motor=0`                                              |
+| Enable all + home  | (none)             | `enable_all`                                                |
 
 ### I/O Commands
 
-| Function | CCCP | Cutter |
-|----------|------|--------|
-| Read digital | `i6` | `read_pin pin=6` |
-| Read analog | `i9` | `read_pin pin=9` |
-| Write digital | `o5 1` | `write_pin pin=5 value=1` |
-| Write analog | `o0 1024` | `set_pwm pin=0 duty=1024` |
-| Configure pin | (hardcoded in setup) | `configure_digital_in pin=6` |
-| PWM output | (none) | `set_pwm pin=0 duty=32768 freq=1000` |
-| H-Bridge | (none) | `set_hbridge pin=4 value=16000` |
-| Tone generation | (none) | `start_tone pin=4 freq=440 amplitude=10000` |
-| Endstop config | (none) | `configure_endstop pin=6 triggered=0` |
+| Function        | CCCP                 | Cutter                                       |
+|-----------------|----------------------|----------------------------------------------|
+| Read digital    | `i6`                 | `read_pin pin=6`                             |
+| Read analog     | `i9`                 | `read_pin pin=9`                             |
+| Write digital   | `o5 1`               | `write_pin pin=5 value=1`                    |
+| Write analog    | `o0 1024`            | `set_pwm pin=0 duty=1024`                    |
+| Configure pin   | (hardcoded in setup) | `configure_digital_in pin=6`                 |
+| PWM output      | (none)               | `set_pwm pin=0 duty=32768 freq=1000`         |
+| H-Bridge        | (none)               | `set_hbridge pin=4 value=16000`              |
+| Tone generation | (none)               | `start_tone pin=4 freq=440 amplitude=10000`  |
+| Endstop config  | (none)               | `configure_endstop pin=6 triggered=0`        |
 
 ### System Commands
 
-| Function | CCCP | Cutter |
-|----------|------|--------|
-| Help | `h` | (none - see docs) |
-| Feedback mode | `f0` / `f1` | (always structured) |
-| Ping/heartbeat | (none) | `ping` |
-| Version | (none) | `version` |
-| Emergency stop | (none) | `emergency_stop` |
-| Get sequence | (none) | `get_next_seq` |
+| Function       | CCCP          | Cutter              |
+|----------------|---------------|---------------------|
+| Help           | `h`           | (none - see docs)   |
+| Feedback mode  | `f0` / `f1`   | (always structured) |
+| Ping/heartbeat | (none)        | `ping`              |
+| Version        | (none)        | `version`           |
+| Emergency stop | (none)        | `emergency_stop`    |
+| Get sequence   | (none)        | `get_next_seq`      |
 
 ## Feature Comparison
 
@@ -83,10 +83,10 @@ Epoch increments on each error, allowing stale commands to be rejected.
 
 **Cutter**: Built-in homing support for both motor types:
 
-| Motor Type | Homing Method |
-|------------|---------------|
+| Motor Type      | Homing Method                              |
+|-----------------|--------------------------------------------|
 | Generic Stepper | Endstop-based: SEEKING -> BACKING_OFF -> LATCHING |
-| ClearPath SDSK | Hard-stop via HLFB torque detection |
+| ClearPath SDSK  | Hard-stop via HLFB torque detection        |
 
 Sequential homing via `enable_all` respects `enable_priority` (lower = first).
 
@@ -205,20 +205,20 @@ set_pwm pin=0 duty=32768 freq=1000
 
 ## Migration from CCCP to Cutter
 
-| CCCP | Cutter |
-|------|--------|
-| `e0` | `enable motor=0` |
-| `d0` | `disable motor=0` |
-| `m0 1000` | `move motor=0 position=1000` (absolute) |
-| `m0 1000` | `move motor=0 steps=1000` (relative) |
-| `v0 500` | `move_velocity motor=0 velocity=500` |
-| `q0p` | Query via `status` or track via events |
-| `l0v 5000` | Set at config: `configure_sdsk motor=0 vel_max=5000` |
-| `l0a 50000` | Set at config: `configure_sdsk motor=0 accel_max=50000` |
-| `z0` | `set_position motor=0 position=0` |
-| `c0` | `reset` (when in error state) |
-| `i6` | `read_pin pin=6` |
-| `o5 1` | `write_pin pin=5 value=1` |
+| CCCP         | Cutter                                                  |
+|--------------|---------------------------------------------------------|
+| `e0`         | `enable motor=0`                                        |
+| `d0`         | `disable motor=0`                                       |
+| `m0 1000`    | `move motor=0 position=1000` (absolute)                 |
+| `m0 1000`    | `move motor=0 steps=1000` (relative)                    |
+| `v0 500`     | `move_velocity motor=0 velocity=500`                    |
+| `q0p`        | Query via `status` or track via events                  |
+| `l0v 5000`   | Set at config: `configure_sdsk motor=0 vel_max=5000`    |
+| `l0a 50000`  | Set at config: `configure_sdsk motor=0 accel_max=50000` |
+| `z0`         | `set_position motor=0 position=0`                       |
+| `c0`         | `reset` (when in error state)                           |
+| `i6`         | `read_pin pin=6`                                        |
+| `o5 1`       | `write_pin pin=5 value=1`                               |
 
 Key differences to note:
 1. Cutter requires explicit pin/motor configuration before use
