@@ -116,7 +116,8 @@ libCutter/
 │   ├── CommandParser.h          # Line parser, key-value extraction
 │   ├── MotorState.h             # Motor config + runtime state
 │   ├── PinState.h               # Pin config + runtime state (includes monitoring)
-│   └── ErrorHandler.h           # Error state management
+│   ├── ErrorHandler.h           # Error state management
+│   └── CutterHal.h              # Hardware abstraction layer interface
 ├── src/
 │   ├── Cutter.cpp               # Main controller implementation
 │   ├── CutterState.cpp          # State transitions
@@ -125,7 +126,21 @@ libCutter/
 │   ├── MotorCommands.cpp        # Motor command handlers
 │   ├── PinCommands.cpp          # Pin command handlers
 │   ├── ResponseWriter.cpp       # Response formatting
-│   └── ErrorHandler.cpp         # Error handling
+│   ├── ErrorHandler.cpp         # Error handling
+│   └── CutterHal_ClearCore.cpp  # HAL implementation for real hardware
+├── test/
+│   ├── CutterHal_Fake.cpp       # HAL implementation for testing
+│   ├── FakeHal.h                # Test helper functions
+│   ├── TestSerial.h             # Fake serial port for testing
+│   ├── test_main.cpp            # Test runner entry point
+│   ├── test_parser.cpp          # Command parser unit tests
+│   ├── test_response.cpp        # Response writer unit tests
+│   ├── test_state_machine.cpp   # State transition tests
+│   ├── test_pins.cpp            # Pin configuration and check logic tests
+│   ├── test_motors.cpp          # Motor configuration and check logic tests
+│   ├── test_homing.cpp          # Homing sequence tests
+│   ├── test_errors.cpp          # Error handling and recovery tests
+│   └── test_integration.cpp     # Full command/response cycle tests
 └── examples/
     ├── BasicUsb/                # USB serial example
     ├── EthernetServer/          # TCP server example
@@ -1044,6 +1059,823 @@ ClearCore has 256KB SRAM, so this is well within budget.
 - `EndStopState`: 5 bytes
 
 Each `PinSlot` = 2 bytes (mode + pin_index) + 21 bytes (union) + padding ≈ 32 bytes
+
+## Hardware Abstraction Layer (HAL)
+
+All ClearCore hardware access goes through a thin HAL that can be swapped at compile time for testing.
+
+### HAL Interface
+
+```cpp
+// inc/CutterHal.h
+#pragma once
+#include <stdint.h>
+
+namespace CutterHal {
+
+// === Pin Operations ===
+bool ReadDigitalPin(uint8_t pin);
+void WriteDigitalPin(uint8_t pin, bool value);
+int16_t ReadAnalogPin(uint8_t pin);  // pins 9-12 only
+void SetPwmDuty(uint8_t pin, uint16_t duty);
+void SetPwmFrequency(uint8_t pin, uint32_t freq);
+void SetHBridgeValue(uint8_t pin, int16_t value);
+void StartTone(uint8_t pin, uint16_t freq, int16_t amplitude);
+void StopTone(uint8_t pin);
+
+// === Motor Operations ===
+void EnableMotor(uint8_t motor, bool enable);
+void MoveRelative(uint8_t motor, int32_t steps);
+void MoveAbsolute(uint8_t motor, int32_t position);
+void MoveVelocity(uint8_t motor, int32_t velocity);
+void StopMotor(uint8_t motor, bool immediate);
+void SetMotorParams(uint8_t motor, int32_t velMax, int32_t accelMax);
+int32_t GetMotorPosition(uint8_t motor);
+void SetMotorPosition(uint8_t motor, int32_t position);
+bool StepsComplete(uint8_t motor);
+uint8_t GetHlfbState(uint8_t motor);
+bool IsMotorReady(uint8_t motor);
+
+// === Timing ===
+uint32_t Milliseconds();
+
+// === Serial (for testing) ===
+// Real impl uses ISerial* passed to Initialize()
+// Fake impl provides TestSerial class
+
+}  // namespace CutterHal
+```
+
+### ClearCore Implementation
+
+```cpp
+// src/CutterHal_ClearCore.cpp
+#ifdef CUTTER_PLATFORM_CLEARCORE
+#include "CutterHal.h"
+#include "ClearCore.h"
+
+namespace CutterHal {
+
+static Connector* GetConnector(uint8_t pin) {
+    // Map pin index to ClearCore connector
+    static Connector* connectors[] = {
+        &ConnectorIO0, &ConnectorIO1, &ConnectorIO2, &ConnectorIO3,
+        &ConnectorIO4, &ConnectorIO5, &ConnectorDI6, &ConnectorDI7,
+        &ConnectorDI8, &ConnectorA9, &ConnectorA10, &ConnectorA11,
+        &ConnectorA12
+    };
+    return connectors[pin];
+}
+
+static MotorDriver* GetMotor(uint8_t motor) {
+    static MotorDriver* motors[] = {
+        &ConnectorM0, &ConnectorM1, &ConnectorM2, &ConnectorM3
+    };
+    return motors[motor];
+}
+
+bool ReadDigitalPin(uint8_t pin) {
+    return GetConnector(pin)->State();
+}
+
+void WriteDigitalPin(uint8_t pin, bool value) {
+    GetConnector(pin)->State(value);
+}
+
+int16_t ReadAnalogPin(uint8_t pin) {
+    // pins 9-12 are analog capable
+    return static_cast<DigitalInAnalogIn*>(GetConnector(pin))->AnalogVoltage();
+}
+
+void EnableMotor(uint8_t motor, bool enable) {
+    GetMotor(motor)->EnableRequest(enable);
+}
+
+void MoveRelative(uint8_t motor, int32_t steps) {
+    GetMotor(motor)->Move(steps);
+}
+
+void MoveVelocity(uint8_t motor, int32_t velocity) {
+    GetMotor(motor)->MoveVelocity(velocity);
+}
+
+bool StepsComplete(uint8_t motor) {
+    return GetMotor(motor)->StepsComplete();
+}
+
+int32_t GetMotorPosition(uint8_t motor) {
+    return GetMotor(motor)->PositionRefCommanded();
+}
+
+uint32_t Milliseconds() {
+    return ClearCore::SysTiming::Instance().Milliseconds();
+}
+
+// ... etc for all functions
+
+}  // namespace CutterHal
+#endif
+```
+
+### Fake Implementation for Testing
+
+```cpp
+// test/CutterHal_Fake.cpp
+#ifdef CUTTER_PLATFORM_TEST
+#include "CutterHal.h"
+#include "FakeHal.h"
+
+namespace CutterHal {
+
+// Global fake state - accessible from tests
+FakeHalState g_fake;
+
+bool ReadDigitalPin(uint8_t pin) {
+    return g_fake.digital_pins[pin];
+}
+
+void WriteDigitalPin(uint8_t pin, bool value) {
+    g_fake.digital_pins[pin] = value;
+    g_fake.digital_pin_writes[pin]++;
+}
+
+int16_t ReadAnalogPin(uint8_t pin) {
+    return g_fake.analog_pins[pin - 9];  // pins 9-12
+}
+
+void EnableMotor(uint8_t motor, bool enable) {
+    g_fake.motor_enabled[motor] = enable;
+}
+
+void MoveRelative(uint8_t motor, int32_t steps) {
+    g_fake.motor_target[motor] = g_fake.motor_position[motor] + steps;
+    g_fake.motor_moving[motor] = true;
+    g_fake.motor_steps_complete[motor] = false;
+}
+
+void MoveVelocity(uint8_t motor, int32_t velocity) {
+    g_fake.motor_velocity[motor] = velocity;
+    g_fake.motor_moving[motor] = (velocity != 0);
+}
+
+bool StepsComplete(uint8_t motor) {
+    return g_fake.motor_steps_complete[motor];
+}
+
+int32_t GetMotorPosition(uint8_t motor) {
+    return g_fake.motor_position[motor];
+}
+
+uint32_t Milliseconds() {
+    return g_fake.time_ms;
+}
+
+}  // namespace CutterHal
+#endif
+```
+
+### Test Helper Functions
+
+```cpp
+// test/FakeHal.h
+#pragma once
+#include <stdint.h>
+#include <cstring>
+
+struct FakeHalState {
+    // Pins
+    bool digital_pins[13] = {};
+    int digital_pin_writes[13] = {};
+    int16_t analog_pins[4] = {};  // pins 9-12
+    uint16_t pwm_duty[6] = {};
+    int16_t hbridge_value[2] = {};  // pins 4-5
+
+    // Motors
+    bool motor_enabled[4] = {};
+    bool motor_moving[4] = {};
+    bool motor_steps_complete[4] = {};
+    int32_t motor_position[4] = {};
+    int32_t motor_target[4] = {};
+    int32_t motor_velocity[4] = {};
+    uint8_t hlfb_state[4] = {};
+
+    // Timing
+    uint32_t time_ms = 0;
+
+    void Reset() {
+        memset(this, 0, sizeof(*this));
+    }
+
+    void AdvanceTime(uint32_t ms) {
+        time_ms += ms;
+    }
+
+    void CompleteMotorMove(uint8_t motor) {
+        motor_position[motor] = motor_target[motor];
+        motor_moving[motor] = false;
+        motor_steps_complete[motor] = true;
+    }
+
+    void TriggerEndStop(uint8_t pin, bool active) {
+        digital_pins[pin] = active;
+    }
+
+    void SetAnalogValue(uint8_t pin, int16_t value) {
+        analog_pins[pin - 9] = value;
+    }
+};
+
+extern FakeHalState g_fake;
+
+// Convenience macros for tests
+#define RESET_HAL() g_fake.Reset()
+#define ADVANCE_TIME(ms) g_fake.AdvanceTime(ms)
+#define SET_PIN(pin, val) g_fake.digital_pins[pin] = val
+#define SET_ANALOG(pin, val) g_fake.SetAnalogValue(pin, val)
+#define COMPLETE_MOVE(motor) g_fake.CompleteMotorMove(motor)
+```
+
+### Test Serial Port
+
+```cpp
+// test/TestSerial.h
+#pragma once
+#include <string>
+#include <vector>
+#include <cstring>
+
+class TestSerial {
+public:
+    // Send a command line (as if host sent it)
+    void SendLine(const char* line) {
+        input_buffer_ += line;
+        input_buffer_ += "\n";
+    }
+
+    // ISerial-like interface for Cutter to read from
+    int16_t CharGet() {
+        if (input_pos_ >= input_buffer_.size()) return -1;
+        return input_buffer_[input_pos_++];
+    }
+
+    int16_t CharPeek() {
+        if (input_pos_ >= input_buffer_.size()) return -1;
+        return input_buffer_[input_pos_];
+    }
+
+    bool SendChar(char c) {
+        output_buffer_ += c;
+        return true;
+    }
+
+    // Test inspection
+    std::string GetOutput() {
+        return output_buffer_;
+    }
+
+    std::vector<std::string> GetOutputLines() {
+        std::vector<std::string> lines;
+        size_t start = 0;
+        for (size_t i = 0; i < output_buffer_.size(); i++) {
+            if (output_buffer_[i] == '\n') {
+                lines.push_back(output_buffer_.substr(start, i - start));
+                start = i + 1;
+            }
+        }
+        return lines;
+    }
+
+    std::string LastResponse() {
+        auto lines = GetOutputLines();
+        for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+            if (it->substr(0, 2) == "ok" || it->substr(0, 5) == "error") {
+                return *it;
+            }
+        }
+        return "";
+    }
+
+    std::string LastEvent() {
+        auto lines = GetOutputLines();
+        for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+            if (it->substr(0, 5) == "event") {
+                return *it;
+            }
+        }
+        return "";
+    }
+
+    bool HasEvent(const std::string& substr) {
+        for (const auto& line : GetOutputLines()) {
+            if (line.find(substr) != std::string::npos) return true;
+        }
+        return false;
+    }
+
+    void Clear() {
+        input_buffer_.clear();
+        output_buffer_.clear();
+        input_pos_ = 0;
+    }
+
+private:
+    std::string input_buffer_;
+    std::string output_buffer_;
+    size_t input_pos_ = 0;
+};
+```
+
+## Testing Strategy
+
+### Test Layers
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 3: Integration Tests                                 │
+│  Full Cutter with fake HAL, command/response cycles         │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: Component Tests                                   │
+│  PinSlot::Check(), MotorState::Check(), state machine       │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 1: Unit Tests                                        │
+│  Parser, response writer, timing utilities                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Layer 1: Unit Tests (Pure Logic, No HAL)
+
+```cpp
+// test/test_parser.cpp
+
+TEST(Parser, EmptyLine) {
+    CommandParser parser;
+    ParsedCommand cmd;
+    EXPECT_FALSE(parser.Parse("", &cmd));
+    EXPECT_FALSE(parser.Parse("   ", &cmd));
+}
+
+TEST(Parser, Comment) {
+    CommandParser parser;
+    ParsedCommand cmd;
+    EXPECT_FALSE(parser.Parse("# this is a comment", &cmd));
+    EXPECT_FALSE(parser.Parse("  # indented comment", &cmd));
+}
+
+TEST(Parser, SimpleCommand) {
+    CommandParser parser;
+    ParsedCommand cmd;
+    EXPECT_TRUE(parser.Parse("ping", &cmd));
+    EXPECT_STREQ(cmd.name, "ping");
+    EXPECT_EQ(cmd.param_count, 0);
+}
+
+TEST(Parser, CommandWithParams) {
+    CommandParser parser;
+    ParsedCommand cmd;
+    EXPECT_TRUE(parser.Parse("move motor=0 steps=1000", &cmd));
+    EXPECT_STREQ(cmd.name, "move");
+
+    int32_t motor, steps;
+    EXPECT_TRUE(cmd.GetInt("motor", &motor));
+    EXPECT_TRUE(cmd.GetInt("steps", &steps));
+    EXPECT_EQ(motor, 0);
+    EXPECT_EQ(steps, 1000);
+}
+
+TEST(Parser, NegativeValues) {
+    CommandParser parser;
+    ParsedCommand cmd;
+    EXPECT_TRUE(parser.Parse("move motor=0 steps=-500", &cmd));
+
+    int32_t steps;
+    EXPECT_TRUE(cmd.GetInt("steps", &steps));
+    EXPECT_EQ(steps, -500);
+}
+
+TEST(Parser, EpochAndSeq) {
+    CommandParser parser;
+    ParsedCommand cmd;
+    EXPECT_TRUE(parser.Parse("move epoch=2 seq=42 motor=0 steps=100", &cmd));
+    EXPECT_TRUE(cmd.has_epoch);
+    EXPECT_TRUE(cmd.has_seq);
+    EXPECT_EQ(cmd.epoch, 2);
+    EXPECT_EQ(cmd.seq, 42);
+}
+
+// test/test_response.cpp
+
+TEST(Response, Ok) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    w.Ok();
+    EXPECT_STREQ(buffer, "ok\n");
+}
+
+TEST(Response, OkWithParams) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    w.Ok().Param("pin", 6).Param("value", 1);
+    EXPECT_STREQ(buffer, "ok pin=6 value=1\n");
+}
+
+TEST(Response, Error) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    w.Error(101, "Invalid parameter");
+    EXPECT_STREQ(buffer, "error code=101 message=\"Invalid parameter\"\n");
+}
+
+TEST(Response, Event) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    w.Event("done").Param("motor", 0).Param("seq", 42);
+    EXPECT_STREQ(buffer, "event type=done motor=0 seq=42\n");
+}
+```
+
+### Layer 2: Component Tests (With Fake HAL)
+
+```cpp
+// test/test_pins.cpp
+
+class PinTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        RESET_HAL();
+    }
+};
+
+TEST_F(PinTest, DigitalInReportsChanges) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_digital_in pin=6 report_changes=1");
+    cutter.Update();
+    serial.SendLine("configuration_done");
+    cutter.Update();
+    serial.Clear();
+
+    // Pin starts low, no event
+    SET_PIN(6, false);
+    cutter.Update();
+    EXPECT_EQ(serial.LastEvent(), "");
+
+    // Pin goes high, should report
+    SET_PIN(6, true);
+    cutter.Update();
+    EXPECT_TRUE(serial.HasEvent("event type=input pin=6 value=1"));
+
+    // Pin stays high, no new event
+    serial.Clear();
+    cutter.Update();
+    EXPECT_EQ(serial.LastEvent(), "");
+
+    // Pin goes low, should report
+    SET_PIN(6, false);
+    cutter.Update();
+    EXPECT_TRUE(serial.HasEvent("event type=input pin=6 value=0"));
+}
+
+TEST_F(PinTest, DigitalInErrorTrigger) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_digital_in pin=6 error_trigger=1");
+    serial.SendLine("configuration_done");
+    cutter.Update();
+    cutter.Update();
+
+    EXPECT_EQ(cutter.GetState(), CutterState::CONFIGURED);
+
+    // Pin low - no error
+    SET_PIN(6, false);
+    cutter.Update();
+    EXPECT_EQ(cutter.GetState(), CutterState::CONFIGURED);
+
+    // Pin high - triggers error
+    SET_PIN(6, true);
+    cutter.Update();
+    EXPECT_EQ(cutter.GetState(), CutterState::ERROR);
+    EXPECT_TRUE(serial.HasEvent("event type=error"));
+}
+
+TEST_F(PinTest, DigitalOutTimeout) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    serial.SendLine("configuration_done");
+    cutter.Update();
+    cutter.Update();
+
+    // Set output high
+    serial.SendLine("set_output pin=0 value=1");
+    cutter.Update();
+    EXPECT_TRUE(g_fake.digital_pins[0]);
+
+    // Time passes but not enough
+    ADVANCE_TIME(50);
+    cutter.Update();
+    EXPECT_TRUE(g_fake.digital_pins[0]);
+
+    // Timeout expires
+    ADVANCE_TIME(60);
+    cutter.Update();
+    EXPECT_FALSE(g_fake.digital_pins[0]);
+    EXPECT_TRUE(serial.HasEvent("event type=timeout pin=0"));
+}
+
+TEST_F(PinTest, AnalogThresholdStopsMotors) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_analog_in pin=9 stop_low=1000 stop_high=3000");
+    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configuration_done");
+    serial.SendLine("enable");
+    for (int i = 0; i < 4; i++) cutter.Update();
+
+    // Start motor moving
+    serial.SendLine("move_velocity motor=0 velocity=1000");
+    cutter.Update();
+    EXPECT_TRUE(g_fake.motor_moving[0]);
+
+    // Analog value in range - motor keeps moving
+    SET_ANALOG(9, 2000);
+    cutter.Update();
+    EXPECT_TRUE(g_fake.motor_moving[0]);
+
+    // Analog value drops below threshold - motor stops
+    SET_ANALOG(9, 500);
+    cutter.Update();
+    EXPECT_FALSE(g_fake.motor_moving[0]);
+    EXPECT_TRUE(serial.HasEvent("event type=threshold"));
+}
+
+// test/test_motors.cpp
+
+class MotorTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        RESET_HAL();
+    }
+};
+
+TEST_F(MotorTest, MoveCompletion) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configuration_done");
+    serial.SendLine("enable");
+    for (int i = 0; i < 3; i++) cutter.Update();
+    serial.Clear();
+
+    // Start move
+    serial.SendLine("move motor=0 steps=1000 seq=1");
+    cutter.Update();
+    EXPECT_EQ(serial.LastResponse(), "ok seq=1");
+    EXPECT_TRUE(g_fake.motor_moving[0]);
+
+    // Move not complete yet
+    cutter.Update();
+    EXPECT_FALSE(serial.HasEvent("event type=done"));
+
+    // Complete the move
+    COMPLETE_MOVE(0);
+    cutter.Update();
+    EXPECT_TRUE(serial.HasEvent("event type=done motor=0 seq=1"));
+}
+
+TEST_F(MotorTest, VelocityMoveAndStop) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configuration_done");
+    serial.SendLine("enable");
+    for (int i = 0; i < 3; i++) cutter.Update();
+
+    // Start velocity move
+    serial.SendLine("move_velocity motor=0 velocity=500");
+    cutter.Update();
+    EXPECT_EQ(g_fake.motor_velocity[0], 500);
+
+    // Stop
+    serial.SendLine("stop motor=0");
+    cutter.Update();
+    EXPECT_EQ(g_fake.motor_velocity[0], 0);
+}
+
+// test/test_homing.cpp
+
+TEST_F(MotorTest, HomingSequence) {
+    CutterController cutter;
+    TestSerial serial;
+    cutter.Initialize(&serial);
+
+    serial.SendLine("configure_stepper motor=0 homing_end_stop=7 homing_dir=-1");
+    serial.SendLine("configure_end_stop pin=7 motor=0 direction=-1 active_low=1");
+    serial.SendLine("configuration_done");
+    serial.SendLine("enable");
+    for (int i = 0; i < 4; i++) cutter.Update();
+    serial.Clear();
+
+    // Start homing
+    serial.SendLine("home motor=0 seq=1");
+    cutter.Update();
+    EXPECT_TRUE(g_fake.motor_moving[0]);
+
+    // Simulate end stop hit (active_low=1, so pin going LOW means triggered)
+    SET_PIN(7, false);
+    cutter.Update();
+
+    // Motor should stop and start backing off
+    // ... (backoff completes)
+    COMPLETE_MOVE(0);
+    cutter.Update();
+
+    EXPECT_EQ(g_fake.motor_position[0], 0);
+    EXPECT_TRUE(serial.HasEvent("event type=homed motor=0"));
+}
+```
+
+### Layer 3: Integration Tests
+
+```cpp
+// test/test_integration.cpp
+
+class IntegrationTest : public ::testing::Test {
+protected:
+    CutterController cutter;
+    TestSerial serial;
+
+    void SetUp() override {
+        RESET_HAL();
+        cutter.Initialize(&serial);
+    }
+
+    void Configure() {
+        serial.SendLine("configure_stepper motor=0");
+        serial.SendLine("configure_stepper motor=1");
+        serial.SendLine("configure_digital_in pin=6 report_changes=1");
+        serial.SendLine("configure_digital_out pin=0 on_error=0");
+        serial.SendLine("configuration_done");
+        for (int i = 0; i < 5; i++) cutter.Update();
+    }
+
+    void Enable() {
+        serial.SendLine("enable");
+        cutter.Update();
+        // Simulate motors becoming ready
+        for (int i = 0; i < 4; i++) {
+            g_fake.hlfb_state[i] = 1;  // HLFB asserted
+        }
+        cutter.Update();
+    }
+};
+
+TEST_F(IntegrationTest, FullWorkflow) {
+    // Connect
+    EXPECT_EQ(cutter.GetState(), CutterState::CONNECTED);
+
+    // Configure
+    Configure();
+    EXPECT_EQ(cutter.GetState(), CutterState::CONFIGURED);
+
+    // Enable
+    Enable();
+    EXPECT_EQ(cutter.GetState(), CutterState::READY);
+
+    // Execute move
+    serial.SendLine("move motor=0 steps=1000 seq=1");
+    cutter.Update();
+    EXPECT_EQ(cutter.GetState(), CutterState::WORKING);
+
+    COMPLETE_MOVE(0);
+    cutter.Update();
+    EXPECT_EQ(cutter.GetState(), CutterState::READY);
+    EXPECT_TRUE(serial.HasEvent("event type=done motor=0 seq=1"));
+}
+
+TEST_F(IntegrationTest, ErrorAndRecovery) {
+    Configure();
+    Enable();
+    serial.Clear();
+
+    // Trigger error
+    serial.SendLine("emergency_stop message=\"test error\"");
+    cutter.Update();
+    EXPECT_EQ(cutter.GetState(), CutterState::ERROR);
+
+    // Digital output should be set to on_error value (0)
+    EXPECT_FALSE(g_fake.digital_pins[0]);
+
+    // Commands rejected during error
+    serial.SendLine("move motor=0 steps=100");
+    cutter.Update();
+    EXPECT_TRUE(serial.LastResponse().find("error") != std::string::npos);
+
+    // Reset
+    serial.SendLine("reset");
+    cutter.Update();
+    EXPECT_EQ(cutter.GetState(), CutterState::CONNECTED);
+}
+
+TEST_F(IntegrationTest, SequenceValidation) {
+    Configure();
+    Enable();
+    serial.Clear();
+
+    // First command with seq
+    serial.SendLine("move motor=0 steps=100 epoch=0 seq=1");
+    cutter.Update();
+    EXPECT_EQ(serial.LastResponse(), "ok seq=1");
+    COMPLETE_MOVE(0);
+    cutter.Update();
+
+    // Next command with correct seq
+    serial.SendLine("move motor=0 steps=100 epoch=0 seq=2");
+    cutter.Update();
+    EXPECT_EQ(serial.LastResponse(), "ok seq=2");
+    COMPLETE_MOVE(0);
+    cutter.Update();
+
+    // Command with wrong seq - should error
+    serial.SendLine("move motor=0 steps=100 epoch=0 seq=5");
+    cutter.Update();
+    EXPECT_TRUE(serial.LastResponse().find("error") != std::string::npos);
+}
+
+TEST_F(IntegrationTest, EpochValidation) {
+    Configure();
+    Enable();
+
+    // Trigger error - epoch should increment
+    serial.SendLine("emergency_stop");
+    cutter.Update();
+
+    serial.SendLine("reset");
+    cutter.Update();
+
+    // Reconfigure after reset
+    Configure();
+    Enable();
+    serial.Clear();
+
+    // Old epoch command rejected
+    serial.SendLine("move motor=0 steps=100 epoch=0 seq=1");
+    cutter.Update();
+    EXPECT_TRUE(serial.LastResponse().find("error") != std::string::npos);
+
+    // New epoch command accepted
+    serial.SendLine("move motor=0 steps=100 epoch=1 seq=1");
+    cutter.Update();
+    EXPECT_EQ(serial.LastResponse(), "ok seq=1");
+}
+```
+
+### Build Configuration
+
+```makefile
+# Makefile
+
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra
+
+# Source files (excluding HAL implementations)
+CUTTER_SRCS = src/Cutter.cpp src/CommandParser.cpp src/CutterState.cpp \
+              src/CommandDispatcher.cpp src/MotorCommands.cpp src/PinCommands.cpp \
+              src/ResponseWriter.cpp src/ErrorHandler.cpp
+
+TEST_SRCS = test/test_main.cpp test/test_parser.cpp test/test_response.cpp \
+            test/test_state_machine.cpp test/test_pins.cpp test/test_motors.cpp \
+            test/test_homing.cpp test/test_errors.cpp test/test_integration.cpp
+
+# ClearCore target
+clearcore: CXXFLAGS += -DCUTTER_PLATFORM_CLEARCORE
+clearcore: $(CUTTER_SRCS) src/CutterHal_ClearCore.cpp
+	# Cross-compile for ClearCore...
+
+# Test target (runs on host PC)
+test: CXXFLAGS += -DCUTTER_PLATFORM_TEST
+test: $(CUTTER_SRCS) test/CutterHal_Fake.cpp $(TEST_SRCS)
+	$(CXX) $(CXXFLAGS) -o run_tests $^ -lgtest -lgtest_main -pthread
+	./run_tests
+
+# Test with coverage
+coverage: CXXFLAGS += -DCUTTER_PLATFORM_TEST --coverage
+coverage: $(CUTTER_SRCS) test/CutterHal_Fake.cpp $(TEST_SRCS)
+	$(CXX) $(CXXFLAGS) -o run_tests $^ -lgtest -lgtest_main -pthread
+	./run_tests
+	gcov $(CUTTER_SRCS)
+```
 
 ## Future Extensions (Not in Initial Scope)
 
