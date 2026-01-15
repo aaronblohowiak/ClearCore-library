@@ -274,6 +274,8 @@ static void CmdWritePin(Controller* ctrl, const ParsedCommand& cmd) {
     if (value && slot->digital_out.max_raised_ms > 0) {
         slot->digital_out.raise_start_time = CutterHal::Milliseconds();
         slot->digital_out.set_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
+    } else if (!value) {
+        slot->digital_out.raise_start_time = 0;
     }
 
     ctrl->Response().Ok();
