@@ -648,3 +648,48 @@ TEST_F(MotorTest, StepperMoveCompletesWithoutHlfb) {
     EXPECT_TRUE(serial.HasEvent("done"));
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
 }
+
+// === Motor Clock Rate Tests ===
+
+TEST_F(MotorTest, SetMotorClockLow) {
+    serial.SendLine("set_motor_clock rate=low");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("rate=low"));
+    EXPECT_EQ(g_fake.motor_clock_rate, 0);  // CLOCK_RATE_LOW
+}
+
+TEST_F(MotorTest, SetMotorClockNormal) {
+    serial.SendLine("set_motor_clock rate=normal");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("rate=normal"));
+    EXPECT_EQ(g_fake.motor_clock_rate, 1);  // CLOCK_RATE_NORMAL
+}
+
+TEST_F(MotorTest, SetMotorClockHigh) {
+    serial.SendLine("set_motor_clock rate=high");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("rate=high"));
+    EXPECT_EQ(g_fake.motor_clock_rate, 2);  // CLOCK_RATE_HIGH
+}
+
+TEST_F(MotorTest, SetMotorClockInvalid) {
+    serial.SendLine("set_motor_clock rate=fast");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("rate must be low, normal, or high"));
+}
+
+TEST_F(MotorTest, SetMotorClockMissingRate) {
+    serial.SendLine("set_motor_clock");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("Missing rate parameter"));
+}

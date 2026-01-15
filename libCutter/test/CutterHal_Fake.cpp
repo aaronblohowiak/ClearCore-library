@@ -77,6 +77,10 @@ void ConfigurePinMode(uint8_t pin, uint8_t mode) {
     (void)mode;
 }
 
+void SetMotorClockRate(uint8_t rate) {
+    g_fake.motor_clock_rate = rate;
+}
+
 void EnableMotor(uint8_t motor, bool enable) {
     if (motor < 4) {
         g_fake.motor_enabled[motor] = enable;

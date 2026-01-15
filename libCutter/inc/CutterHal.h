@@ -91,6 +91,28 @@ void ConfigurePinMode(uint8_t pin, uint8_t mode);
 // === Motor Operations ===
 
 /**
+    \brief Motor clock rate options
+
+    Controls the step output rate for all motors (global setting).
+    - LOW: 100 kHz, 5µs pulse width (for slower steppers)
+    - NORMAL: 500 kHz, 1µs pulse width (recommended for ClearPath)
+    - HIGH: 2 MHz, 250ns pulse width (may cause errors with ClearPath)
+**/
+constexpr uint8_t CLOCK_RATE_LOW = 0;
+constexpr uint8_t CLOCK_RATE_NORMAL = 1;
+constexpr uint8_t CLOCK_RATE_HIGH = 2;
+
+/**
+    \brief Set motor step clock rate (global)
+
+    Sets the output step rate for all motor step generators.
+    This is a global setting - cannot be set per-motor.
+
+    \param[in] rate Clock rate (CLOCK_RATE_LOW, CLOCK_RATE_NORMAL, or CLOCK_RATE_HIGH)
+**/
+void SetMotorClockRate(uint8_t rate);
+
+/**
     \brief Enable or disable motor
 
     \param[in] motor Motor index (0-3)

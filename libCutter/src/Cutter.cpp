@@ -183,7 +183,8 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         strcmp(cmd.name, "move_velocity") == 0 ||
         strcmp(cmd.name, "stop") == 0 ||
         strcmp(cmd.name, "home") == 0 ||
-        strcmp(cmd.name, "set_position") == 0) {
+        strcmp(cmd.name, "set_position") == 0 ||
+        strcmp(cmd.name, "set_motor_clock") == 0) {
         extern void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd);
         DispatchMotorCommand(this, cmd);
         return;

@@ -477,6 +477,42 @@ static void CmdSetPosition(Controller* ctrl, const ParsedCommand& cmd) {
     ctrl->SendResponse();
 }
 
+// Set motor step clock rate (global setting for all motors)
+// rate: "low" (100kHz), "normal" (500kHz), "high" (2MHz)
+// Use "low" for generic steppers, "normal" for ClearPath
+static void CmdSetMotorClock(Controller* ctrl, const ParsedCommand& cmd) {
+    State s = ctrl->GetState();
+    if (s == State::UNCONNECTED) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_STATE, "Not connected");
+        return;
+    }
+
+    const char* rate_str = cmd.GetString("rate");
+    if (!rate_str) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing rate parameter");
+        return;
+    }
+
+    uint8_t rate;
+    if (strcmp(rate_str, "low") == 0) {
+        rate = CutterHal::CLOCK_RATE_LOW;
+    } else if (strcmp(rate_str, "normal") == 0) {
+        rate = CutterHal::CLOCK_RATE_NORMAL;
+    } else if (strcmp(rate_str, "high") == 0) {
+        rate = CutterHal::CLOCK_RATE_HIGH;
+    } else {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM, "rate must be low, normal, or high");
+        return;
+    }
+
+    CutterHal::SetMotorClockRate(rate);
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("rate", rate_str);
+    ctrl->SendResponse();
+}
+
 // === Homing Commands ===
 
 // Start homing sequence for a motor (called from enable_all and home command)
@@ -736,6 +772,8 @@ void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd) {
         CmdHome(ctrl, cmd);
     } else if (strcmp(cmd.name, "set_position") == 0) {
         CmdSetPosition(ctrl, cmd);
+    } else if (strcmp(cmd.name, "set_motor_clock") == 0) {
+        CmdSetMotorClock(ctrl, cmd);
     }
 }
 

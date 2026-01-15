@@ -32,6 +32,7 @@ struct FakeHalState {
     bool motor_fault[4] = {};             // Hardware fault on motors 0-3
 
     // === Motor State ===
+    uint8_t motor_clock_rate = 1;             // Default: CLOCK_RATE_NORMAL
     bool motor_enabled[4] = {};
     bool motor_moving[4] = {};
     bool motor_steps_complete[4] = {true, true, true, true};

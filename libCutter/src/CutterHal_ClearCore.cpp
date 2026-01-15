@@ -122,6 +122,23 @@ void ConfigurePinMode(uint8_t pin, uint8_t mode) {
     }
 }
 
+void SetMotorClockRate(uint8_t rate) {
+    ClearCore::MotorManager::MotorClockRates clockRate;
+    switch (rate) {
+        case CLOCK_RATE_LOW:
+            clockRate = ClearCore::MotorManager::CLOCK_RATE_LOW;
+            break;
+        case CLOCK_RATE_HIGH:
+            clockRate = ClearCore::MotorManager::CLOCK_RATE_HIGH;
+            break;
+        case CLOCK_RATE_NORMAL:
+        default:
+            clockRate = ClearCore::MotorManager::CLOCK_RATE_NORMAL;
+            break;
+    }
+    ClearCore::MotorMgr.MotorInputClocking(clockRate);
+}
+
 void EnableMotor(uint8_t motor, bool enable) {
     auto* m = GetMotor(motor);
     if (m) {
