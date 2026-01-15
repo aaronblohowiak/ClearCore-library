@@ -30,13 +30,9 @@ protected:
 
     void ConfigureAndEnableStepper(int motor = 0) {
         char cmd[128];
-        snprintf(cmd, sizeof(cmd), "configure_stepper motor=%d", motor);
+        // Use home_on_enable=0 for tests that don't need homing
+        snprintf(cmd, sizeof(cmd), "configure_stepper motor=%d home_on_enable=0", motor);
         serial.SendLine(cmd);
-        ctrl->Update();
-        serial.ClearOutput();
-
-        // Configure endstop for stepper
-        serial.SendLine("configure_endstop pin=6");
         ctrl->Update();
         serial.ClearOutput();
 
@@ -60,7 +56,7 @@ TEST_F(MotorTest, ConfigureClearPath) {
 }
 
 TEST_F(MotorTest, ConfigureStepper) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("ok"));
@@ -87,7 +83,7 @@ TEST_F(MotorTest, ConfigureInvalidType) {
 // === Enable/Disable ===
 
 TEST_F(MotorTest, EnableStepper) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -108,7 +104,7 @@ TEST_F(MotorTest, EnableStepper) {
 
 TEST_F(MotorTest, EnableNotConfigured) {
     // First configure motor 1 so we get to CONFIGURED state
-    serial.SendLine("configure_stepper motor=1");
+    serial.SendLine("configure_stepper motor=1 home_on_enable=0");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -212,7 +208,7 @@ TEST_F(MotorTest, SetPosition) {
 // === Soft Limits ===
 
 TEST_F(MotorTest, SoftLimitsBlock) {
-    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=10000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 soft_limits=1 soft_min=0 soft_max=10000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -229,7 +225,7 @@ TEST_F(MotorTest, SoftLimitsBlock) {
 }
 
 TEST_F(MotorTest, SoftLimitsAllow) {
-    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=10000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 soft_limits=1 soft_min=0 soft_max=10000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -245,7 +241,7 @@ TEST_F(MotorTest, SoftLimitsAllow) {
 }
 
 TEST_F(MotorTest, VelocityMoveSoftLimitMax) {
-    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=1000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 soft_limits=1 soft_min=0 soft_max=1000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -275,7 +271,7 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMax) {
 
 TEST_F(MotorTest, VelocityMoveSoftLimitMin) {
     // Configure with range 0-10000, position starts at 5000
-    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=10000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 soft_limits=1 soft_min=0 soft_max=10000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -303,7 +299,7 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMin) {
 
 TEST_F(MotorTest, VelocityMoveNoSoftLimitWhenDisabled) {
     // Configure without soft limits
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -329,7 +325,7 @@ TEST_F(MotorTest, VelocityMoveNoSoftLimitWhenDisabled) {
 // === State Validation ===
 
 TEST_F(MotorTest, MoveRequiresReady) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -344,7 +340,7 @@ TEST_F(MotorTest, MoveRequiresReady) {
 // === Hardware Fault Tests ===
 
 TEST_F(MotorTest, MotorHardwareFault) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -363,7 +359,7 @@ TEST_F(MotorTest, MotorHardwareFault) {
 }
 
 TEST_F(MotorTest, NoFaultWhenMotorHealthy) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -381,7 +377,7 @@ TEST_F(MotorTest, NoFaultWhenMotorHealthy) {
 // === Per-Move Velocity/Acceleration Tests ===
 
 TEST_F(MotorTest, MoveWithVelOverride) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -398,7 +394,7 @@ TEST_F(MotorTest, MoveWithVelOverride) {
 }
 
 TEST_F(MotorTest, MoveWithAccelOverride) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -415,7 +411,7 @@ TEST_F(MotorTest, MoveWithAccelOverride) {
 }
 
 TEST_F(MotorTest, MoveWithBothOverrides) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -431,7 +427,7 @@ TEST_F(MotorTest, MoveWithBothOverrides) {
 }
 
 TEST_F(MotorTest, MoveVelExceedsMax) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -450,7 +446,7 @@ TEST_F(MotorTest, MoveVelExceedsMax) {
 }
 
 TEST_F(MotorTest, MoveAccelExceedsMax) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -469,7 +465,7 @@ TEST_F(MotorTest, MoveAccelExceedsMax) {
 }
 
 TEST_F(MotorTest, MoveVelocityWithAccelOverride) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -486,7 +482,7 @@ TEST_F(MotorTest, MoveVelocityWithAccelOverride) {
 }
 
 TEST_F(MotorTest, MoveVelocityExceedsMax) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -504,7 +500,7 @@ TEST_F(MotorTest, MoveVelocityExceedsMax) {
 }
 
 TEST_F(MotorTest, MoveVelocityNegativeWithinMax) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -520,7 +516,7 @@ TEST_F(MotorTest, MoveVelocityNegativeWithinMax) {
 }
 
 TEST_F(MotorTest, MoveVelocityNegativeExceedsMax) {
-    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 vel_max=10000 accel_max=100000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -539,7 +535,7 @@ TEST_F(MotorTest, MoveVelocityNegativeExceedsMax) {
 // === Event Epoch Tests ===
 
 TEST_F(MotorTest, DoneEventIncludesEpoch) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -564,7 +560,7 @@ TEST_F(MotorTest, DoneEventIncludesEpoch) {
 }
 
 TEST_F(MotorTest, SoftLimitEventIncludesEpoch) {
-    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=1000");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0 soft_limits=1 soft_min=0 soft_max=1000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();

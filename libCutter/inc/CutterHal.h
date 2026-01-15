@@ -195,6 +195,60 @@ bool IsMotorInFault(uint8_t motor);
 **/
 bool IsPinInFault(uint8_t pin);
 
+// === Limit Switches ===
+
+/// Invalid pin constant (matches ClearCore's CLEARCORE_PIN_INVALID)
+constexpr uint8_t PIN_INVALID = 255;
+
+/**
+    \brief Configure negative direction limit switch for motor
+
+    The pin must be configured as digital input before calling this.
+    Uses NC (normally closed) switch logic - motion stops when pin goes low.
+
+    \param[in] motor Motor index (0-3)
+    \param[in] pin Pin to use as limit switch (or PIN_INVALID to disable)
+    \return true if successfully configured
+**/
+bool SetLimitSwitchNeg(uint8_t motor, uint8_t pin);
+
+/**
+    \brief Configure positive direction limit switch for motor
+
+    The pin must be configured as digital input before calling this.
+    Uses NC (normally closed) switch logic - motion stops when pin goes low.
+
+    \param[in] motor Motor index (0-3)
+    \param[in] pin Pin to use as limit switch (or PIN_INVALID to disable)
+    \return true if successfully configured
+**/
+bool SetLimitSwitchPos(uint8_t motor, uint8_t pin);
+
+/**
+    \brief Check if motion was canceled due to negative limit switch
+
+    \param[in] motor Motor index (0-3)
+    \return true if MotionCanceledNegativeLimit alert is set
+**/
+bool HasMotionCanceledNegLimit(uint8_t motor);
+
+/**
+    \brief Check if motion was canceled due to positive limit switch
+
+    \param[in] motor Motor index (0-3)
+    \return true if MotionCanceledPositiveLimit alert is set
+**/
+bool HasMotionCanceledPosLimit(uint8_t motor);
+
+/**
+    \brief Clear motor alerts
+
+    Must be called after limit switch triggers to allow further motion.
+
+    \param[in] motor Motor index (0-3)
+**/
+void ClearMotorAlerts(uint8_t motor);
+
 // === Timing ===
 
 /**

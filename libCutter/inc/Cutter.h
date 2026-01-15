@@ -244,15 +244,17 @@ struct MotorSlot {
     // Homing state (both motor types)
     HomingState homing_state;
 
-    // Generic stepper homing (endstop-based)
-    uint8_t end_stop_pin;           ///< Pin configured as END_STOP for this motor
-    uint8_t end_stop_triggered;     ///< 0 = triggered when LOW (NC default), 1 = triggered when HIGH (NO)
-    int32_t homing_seek_velocity;   ///< Fast approach velocity (steps/sec, negative = toward endstop)
-    int32_t homing_latch_velocity;  ///< Slow precision velocity (steps/sec)
+    // Limit switch configuration (using ClearCore native support)
+    uint8_t limit_neg_pin;          ///< Pin for negative limit switch (PIN_INVALID = none)
+    uint8_t limit_pos_pin;          ///< Pin for positive limit switch (PIN_INVALID = none)
+
+    // Generic stepper homing parameters
+    int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
+    int32_t homing_seek_velocity;   ///< Fast approach velocity (steps/sec, always positive)
+    int32_t homing_latch_velocity;  ///< Slow precision velocity (steps/sec, always positive)
     int32_t homing_backoff_distance;///< Distance to back off after first contact (steps)
 
     // SDSK/ClearPath homing (hard-stop based)
-    int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
     int32_t homing_torque_limit;    ///< HLFB torque % that indicates hard stop (0 = use default)
 
     // SDSK/ClearPath runtime state

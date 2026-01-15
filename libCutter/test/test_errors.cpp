@@ -183,7 +183,7 @@ TEST_F(ErrorTest, WriteToUnconfiguredPin) {
 // === Motor Not Ready ===
 
 TEST_F(ErrorTest, MoveWithoutEnable) {
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -197,9 +197,7 @@ TEST_F(ErrorTest, MoveWithoutEnable) {
 
 TEST_F(ErrorTest, EmergencyStop) {
     // Configure and enable a motor
-    serial.SendLine("configure_stepper motor=0");
-    ctrl->Update();
-    serial.SendLine("configure_endstop pin=6");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("enable motor=0");
     ctrl->Update();

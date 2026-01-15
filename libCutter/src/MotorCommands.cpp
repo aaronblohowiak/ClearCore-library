@@ -78,8 +78,8 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     ctrl->SendResponse();
 }
 
-// Configure generic stepper motor (uses endstop for homing)
-// Uses NC (normally-closed) endstop by default: triggered when pin reads LOW (fail-safe)
+// Configure generic stepper motor (uses ClearCore native limit switches for homing)
+// Limit switches must be NC (normally-closed) for fail-safe operation
 static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     State s = ctrl->GetState();
     if (s == State::UNCONNECTED) {
@@ -93,6 +93,44 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    // Get homing direction first to validate limit switch requirements
+    int32_t homing_dir = cmd.GetIntOr("homing_direction", -1);
+    if (homing_dir != -1 && homing_dir != 1) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM, "homing_direction must be -1 or 1");
+        return;
+    }
+
+    // Get limit switch pins (PIN_INVALID = not configured)
+    int32_t limit_neg = cmd.GetIntOr("limit_neg_pin", CutterHal::PIN_INVALID);
+    int32_t limit_pos = cmd.GetIntOr("limit_pos_pin", CutterHal::PIN_INVALID);
+
+    // Validate limit switch pin in homing direction is configured
+    bool home_on_enable = cmd.GetBoolOr("home_on_enable", true);
+    if (home_on_enable) {
+        if (homing_dir == -1 && limit_neg == CutterHal::PIN_INVALID) {
+            SendError(ctrl, cmd, ErrorCode::MISSING_PARAM,
+                     "limit_neg_pin required for homing in negative direction");
+            return;
+        }
+        if (homing_dir == 1 && limit_pos == CutterHal::PIN_INVALID) {
+            SendError(ctrl, cmd, ErrorCode::MISSING_PARAM,
+                     "limit_pos_pin required for homing in positive direction");
+            return;
+        }
+    }
+
+    // Validate pin indices
+    if (limit_neg != CutterHal::PIN_INVALID &&
+        (limit_neg < 0 || limit_neg >= static_cast<int32_t>(NUM_PINS))) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid limit_neg_pin");
+        return;
+    }
+    if (limit_pos != CutterHal::PIN_INVALID &&
+        (limit_pos < 0 || limit_pos >= static_cast<int32_t>(NUM_PINS))) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid limit_pos_pin");
+        return;
+    }
+
     MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
     memset(slot, 0, sizeof(MotorSlot));
     slot->motor_index = static_cast<uint8_t>(motor);
@@ -102,21 +140,29 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Enable/homing configuration
     slot->enable_priority = static_cast<uint8_t>(cmd.GetIntOr("enable_priority", motor));
-    slot->home_on_enable = cmd.GetBoolOr("home_on_enable", true);
+    slot->home_on_enable = home_on_enable;
 
     // Soft limits
     slot->soft_limits_enabled = cmd.GetBoolOr("soft_limits", false);
     slot->soft_limit_min = cmd.GetIntOr("soft_min", INT32_MIN);
     slot->soft_limit_max = cmd.GetIntOr("soft_max", INT32_MAX);
 
-    // Endstop homing configuration
-    // end_stop_triggered=0 means triggered when LOW (NC switch, fail-safe default)
-    // end_stop_triggered=1 means triggered when HIGH (NO switch)
-    slot->end_stop_pin = static_cast<uint8_t>(cmd.GetIntOr("end_stop_pin", 6));
-    slot->end_stop_triggered = static_cast<uint8_t>(cmd.GetIntOr("end_stop_triggered", 0));
+    // Limit switch and homing configuration
+    slot->limit_neg_pin = static_cast<uint8_t>(limit_neg);
+    slot->limit_pos_pin = static_cast<uint8_t>(limit_pos);
+    slot->homing_direction = homing_dir;
     slot->homing_seek_velocity = cmd.GetIntOr("homing_seek_velocity", 5000);
     slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
     slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
+
+    // Configure ClearCore limit switches
+    // ClearCore will internally configure the pin as digital input
+    if (limit_neg != CutterHal::PIN_INVALID) {
+        CutterHal::SetLimitSwitchNeg(slot->motor_index, static_cast<uint8_t>(limit_neg));
+    }
+    if (limit_pos != CutterHal::PIN_INVALID) {
+        CutterHal::SetLimitSwitchPos(slot->motor_index, static_cast<uint8_t>(limit_pos));
+    }
 
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
@@ -416,9 +462,10 @@ void StartHoming(MotorSlot* slot, const CommandId& id) {
     slot->homed = false;
 
     if (slot->type == MotorType::GENERIC_STEPPER) {
-        // Stepper: endstop-based homing
+        // Stepper: limit switch-based homing using ClearCore native support
         slot->homing_state = HomingState::SEEKING;
-        CutterHal::MoveVelocity(slot->motor_index, -slot->homing_seek_velocity);
+        int32_t velocity = slot->homing_seek_velocity * slot->homing_direction;
+        CutterHal::MoveVelocity(slot->motor_index, velocity);
     } else if (slot->type == MotorType::CLEARPATH) {
         // SDSK: hard-stop homing via HLFB
         slot->homing_state = HomingState::SDSK_SEEKING;
@@ -556,25 +603,29 @@ static void CompleteHoming(Controller* ctrl, MotorSlot& motor) {
     }
 }
 
-// Check endstop for generic stepper homing
+// Check for limit switch trigger during generic stepper homing
+// Uses ClearCore native limit switch support - motor auto-stops when limit triggers
 static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
-    PinSlot* endstop = ctrl->GetPin(motor.end_stop_pin);
-    if (!endstop || endstop->mode != PinMode::END_STOP) return;
+    (void)ctrl;  // May be used in future for error handling
 
-    // Read pin and compare to triggered_value
-    // end_stop_triggered=0: triggered when LOW (NC, fail-safe)
-    // end_stop_triggered=1: triggered when HIGH (NO)
-    bool pin_value = CutterHal::ReadDigitalPin(motor.end_stop_pin);
-    bool triggered = (pin_value == (motor.end_stop_triggered == 1));
+    // Check if limit switch was triggered based on homing direction
+    bool limit_triggered = (motor.homing_direction < 0)
+        ? CutterHal::HasMotionCanceledNegLimit(motor.motor_index)
+        : CutterHal::HasMotionCanceledPosLimit(motor.motor_index);
 
     switch (motor.homing_state) {
         case HomingState::SEEKING:
-            // Looking for endstop
-            if (triggered) {
-                // Hit endstop - stop and back off
-                CutterHal::StopMotor(motor.motor_index, true);
+            // Moving fast toward limit, motor auto-stops when limit triggers
+            if (limit_triggered) {
+                // Clear alert to allow further motion
+                CutterHal::ClearMotorAlerts(motor.motor_index);
+                // Back off from limit (opposite to homing direction)
                 motor.homing_state = HomingState::BACKING_OFF;
-                CutterHal::MoveRelative(motor.motor_index, motor.homing_backoff_distance);
+                int32_t backoff = motor.homing_backoff_distance;
+                if (motor.homing_direction < 0) {
+                    backoff = -backoff;  // Backoff in positive direction
+                }
+                CutterHal::MoveRelative(motor.motor_index, -backoff);
             }
             break;
 
@@ -583,13 +634,18 @@ static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
             if (CutterHal::StepsComplete(motor.motor_index)) {
                 // Now approach slowly for latch
                 motor.homing_state = HomingState::LATCHING;
-                CutterHal::MoveVelocity(motor.motor_index, -motor.homing_latch_velocity);
+                int32_t latch_vel = motor.homing_latch_velocity;
+                if (motor.homing_direction < 0) {
+                    latch_vel = -latch_vel;  // Move in negative direction
+                }
+                CutterHal::MoveVelocity(motor.motor_index, latch_vel);
             }
             break;
 
         case HomingState::LATCHING:
-            // Slow approach for precise position
-            if (triggered) {
+            // Slow approach for precise position, motor auto-stops at limit
+            if (limit_triggered) {
+                CutterHal::ClearMotorAlerts(motor.motor_index);
                 CompleteHoming(ctrl, motor);
             }
             break;

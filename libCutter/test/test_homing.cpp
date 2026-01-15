@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "Cutter.h"
+#include "CutterHal.h"
 #include "FakeHal.h"
 #include "TestSerial.h"
 
@@ -18,14 +19,10 @@ protected:
     void SetUp() override {
         RESET_HAL();
         ctrl = new Controller(&serial);
-        // Connect and configure stepper
-        // Note: end_stop_triggered=1 means triggered when HIGH (NO switch)
-        // Default is 0 (triggered when LOW, NC switch, fail-safe)
+        // Connect and configure stepper with limit switch on pin 6
         serial.SendLine("ping");
         ctrl->Update();
-        serial.SendLine("configure_stepper motor=0 end_stop_pin=6 end_stop_triggered=1 homing_seek_velocity=5000 homing_latch_velocity=500 homing_backoff=200");
-        ctrl->Update();
-        serial.SendLine("configure_endstop pin=6 triggered=1");
+        serial.SendLine("configure_stepper motor=0 limit_neg_pin=6 homing_direction=-1 homing_seek_velocity=5000 homing_latch_velocity=500 homing_backoff=200");
         ctrl->Update();
         serial.SendLine("enable motor=0");
         ctrl->Update();
@@ -86,19 +83,18 @@ TEST_F(HomingTest, HomingSequenceComplete) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Phase 1: Seeking - motor moves toward endstop
+    // Phase 1: Seeking - motor moves toward limit switch
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::SEEKING);
 
-    // Trigger endstop
-    SET_PIN(6, true);
+    // Trigger limit switch (ClearCore stops motor and sets alert)
+    TRIGGER_NEG_LIMIT(0);
     ctrl->Update();
 
     // Phase 2: Backing off
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::BACKING_OFF);
     serial.ClearOutput();
 
-    // Clear endstop, complete backoff move
-    SET_PIN(6, false);
+    // Complete backoff move
     COMPLETE_MOVE(0);
     ctrl->Update();
 
@@ -106,8 +102,8 @@ TEST_F(HomingTest, HomingSequenceComplete) {
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
     serial.ClearOutput();
 
-    // Trigger endstop again for final latch
-    SET_PIN(6, true);
+    // Trigger limit switch again for final latch
+    TRIGGER_NEG_LIMIT(0);
     ctrl->Update();
 
     // Should be complete
@@ -121,33 +117,48 @@ TEST_F(HomingTest, HomingSequenceComplete) {
     EXPECT_EQ(ctrl->GetState(), State::READY);
 }
 
-// === Homing with NC Endstop (triggered when LOW) ===
+// === Homing in Positive Direction ===
 
-TEST_F(HomingTest, HomingTriggeredLow) {
-    // Reconfigure with triggered=0 (NC switch, fail-safe default)
-    // triggered=0 means endstop is triggered when pin reads LOW
-    serial.SendLine("configure_stepper motor=0 end_stop_pin=6 end_stop_triggered=0");
+TEST_F(HomingTest, HomingPositiveDirection) {
+    // Reconfigure with positive homing direction
+    serial.SendLine("configure_stepper motor=0 limit_pos_pin=7 homing_direction=1");
     ctrl->Update();
-    serial.SendLine("configure_endstop pin=6 triggered=0");
-    ctrl->Update();
-    // Re-enable motor after reconfiguring (memset resets enabled flag)
     serial.SendLine("enable motor=0");
     ctrl->Update();
     serial.ClearOutput();
 
-    // Endstop starts high (not triggered since triggered=0 means LOW triggers)
-    SET_PIN(6, true);
     serial.SendLine("home motor=0");
     ctrl->Update();
     serial.ClearOutput();
 
-    // Should be seeking since endstop not triggered
+    // Should be seeking
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::SEEKING);
 
-    // Trigger endstop (goes low)
-    SET_PIN(6, false);
+    // Trigger positive limit switch
+    TRIGGER_POS_LIMIT(0);
     ctrl->Update();
 
     // Should advance to backing off
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::BACKING_OFF);
+}
+
+// === Limit Switch Required for Homing ===
+
+TEST_F(HomingTest, LimitSwitchRequiredForHoming) {
+    // Try to configure without limit switch in homing direction
+    serial.SendLine("configure_stepper motor=0 homing_direction=-1");
+    ctrl->Update();
+
+    // Should fail because limit_neg_pin is required for homing in negative direction
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("limit_neg_pin required"));
+}
+
+TEST_F(HomingTest, NoLimitSwitchRequiredWhenNotHoming) {
+    // Configure without limit switch but with home_on_enable=0
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
+    ctrl->Update();
+
+    // Should succeed because homing is disabled
+    EXPECT_TRUE(serial.HasOutput("ok"));
 }

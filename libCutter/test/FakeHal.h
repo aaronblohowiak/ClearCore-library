@@ -43,6 +43,12 @@ struct FakeHalState {
     uint8_t hlfb_state[4] = {};
     bool motor_ready[4] = {};
 
+    // === Limit Switch State ===
+    uint8_t limit_switch_neg_pin[4] = {255, 255, 255, 255};  // PIN_INVALID = 255
+    uint8_t limit_switch_pos_pin[4] = {255, 255, 255, 255};
+    bool motion_canceled_neg_limit[4] = {};  // Alert flag
+    bool motion_canceled_pos_limit[4] = {};  // Alert flag
+
     // === Timing ===
     uint32_t time_ms = 0;
 
@@ -54,6 +60,8 @@ struct FakeHalState {
         // Motors start with steps_complete = true
         for (int i = 0; i < 4; i++) {
             motor_steps_complete[i] = true;
+            limit_switch_neg_pin[i] = 255;  // PIN_INVALID
+            limit_switch_pos_pin[i] = 255;
         }
     }
 
@@ -120,6 +128,47 @@ struct FakeHalState {
             motor_ready[motor] = ready;
         }
     }
+
+    /**
+     * @brief Trigger negative limit switch for motor
+     *
+     * Simulates hardware detecting limit - stops motor and sets alert.
+     * @param motor Motor index (0-3)
+     */
+    void TriggerNegativeLimit(uint8_t motor) {
+        if (motor < 4) {
+            motion_canceled_neg_limit[motor] = true;
+            motor_moving[motor] = false;
+            motor_velocity[motor] = 0;
+            motor_steps_complete[motor] = true;
+        }
+    }
+
+    /**
+     * @brief Trigger positive limit switch for motor
+     *
+     * Simulates hardware detecting limit - stops motor and sets alert.
+     * @param motor Motor index (0-3)
+     */
+    void TriggerPositiveLimit(uint8_t motor) {
+        if (motor < 4) {
+            motion_canceled_pos_limit[motor] = true;
+            motor_moving[motor] = false;
+            motor_velocity[motor] = 0;
+            motor_steps_complete[motor] = true;
+        }
+    }
+
+    /**
+     * @brief Clear motor alerts
+     * @param motor Motor index (0-3)
+     */
+    void ClearAlerts(uint8_t motor) {
+        if (motor < 4) {
+            motion_canceled_neg_limit[motor] = false;
+            motion_canceled_pos_limit[motor] = false;
+        }
+    }
 };
 
 // Global fake state instance (defined in CutterHal_Fake.cpp)
@@ -137,3 +186,6 @@ extern FakeHalState g_fake;
 #define SET_MOTOR_READY(m, r)   g_fake.SetMotorReady(m, r)
 #define SET_PIN_FAULT(pin, f)   g_fake.pin_fault[pin] = (f)
 #define SET_MOTOR_FAULT(m, f)   g_fake.motor_fault[m] = (f)
+#define TRIGGER_NEG_LIMIT(m)    g_fake.TriggerNegativeLimit(m)
+#define TRIGGER_POS_LIMIT(m)    g_fake.TriggerPositiveLimit(m)
+#define CLEAR_MOTOR_ALERTS(m)   g_fake.ClearAlerts(m)

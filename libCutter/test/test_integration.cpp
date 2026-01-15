@@ -35,17 +35,11 @@ TEST_F(IntegrationTest, FullMotionCycle) {
     EXPECT_EQ(ctrl->GetState(), State::CONNECTED);
     serial.ClearOutput();
 
-    // Configure motor
-    serial.SendLine("configure_stepper motor=0");
+    // Configure motor (no homing for this test)
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_EQ(ctrl->GetState(), State::CONFIGURED);
-    serial.ClearOutput();
-
-    // Configure endstop
-    serial.SendLine("configure_endstop pin=6");
-    ctrl->Update();
-    EXPECT_TRUE(serial.HasOutput("ok"));
     serial.ClearOutput();
 
     // Enable motor
@@ -76,11 +70,9 @@ TEST_F(IntegrationTest, MultiMotorMotion) {
     // Setup
     serial.SendLine("ping");
     ctrl->Update();
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
-    serial.SendLine("configure_stepper motor=1");
-    ctrl->Update();
-    serial.SendLine("configure_endstop pin=6");
+    serial.SendLine("configure_stepper motor=1 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("enable motor=0");
     ctrl->Update();
@@ -123,9 +115,7 @@ TEST_F(IntegrationTest, PinEventDuringMotion) {
     ctrl->Update();
     serial.SendLine("configure_digital_in pin=7 report_changes=1");
     ctrl->Update();
-    serial.SendLine("configure_stepper motor=0");
-    ctrl->Update();
-    serial.SendLine("configure_endstop pin=6");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.SendLine("enable motor=0");
     ctrl->Update();
@@ -149,7 +139,7 @@ TEST_F(IntegrationTest, ErrorRecoveryCycle) {
     // Setup
     serial.SendLine("ping");
     ctrl->Update();
-    serial.SendLine("configure_stepper motor=0");
+    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
     ctrl->Update();
     serial.ClearOutput();
 

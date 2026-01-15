@@ -181,6 +181,43 @@ bool IsPinInFault(uint8_t pin) {
     return false;
 }
 
+bool SetLimitSwitchNeg(uint8_t motor, uint8_t pin) {
+    if (motor < 4) {
+        g_fake.limit_switch_neg_pin[motor] = pin;
+        return true;
+    }
+    return false;
+}
+
+bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
+    if (motor < 4) {
+        g_fake.limit_switch_pos_pin[motor] = pin;
+        return true;
+    }
+    return false;
+}
+
+bool HasMotionCanceledNegLimit(uint8_t motor) {
+    if (motor < 4) {
+        return g_fake.motion_canceled_neg_limit[motor];
+    }
+    return false;
+}
+
+bool HasMotionCanceledPosLimit(uint8_t motor) {
+    if (motor < 4) {
+        return g_fake.motion_canceled_pos_limit[motor];
+    }
+    return false;
+}
+
+void ClearMotorAlerts(uint8_t motor) {
+    if (motor < 4) {
+        g_fake.motion_canceled_neg_limit[motor] = false;
+        g_fake.motion_canceled_pos_limit[motor] = false;
+    }
+}
+
 uint32_t Milliseconds() {
     return g_fake.time_ms;
 }
