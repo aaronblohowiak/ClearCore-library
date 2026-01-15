@@ -129,6 +129,7 @@ struct DigitalOutState {
     bool on_error_enabled;      ///< Apply on_error_value on error
     uint32_t max_raised_ms;     ///< Max time pin can be high (0=disabled)
     uint32_t raise_start_time;  ///< When pin was last set high
+    CommandId set_id;           ///< Command that set pin high (for timeout correlation)
 };
 
 /**
@@ -212,6 +213,7 @@ struct MotorSlot {
     bool moving;
     bool velocity_move;         ///< True if current move is velocity (not position)
     CommandId move_id;          ///< Epoch+seq of current move (for event correlation)
+    CommandId enable_id;        ///< Epoch+seq of enable command (for HLFB timeout)
 
     // Common enable/homing configuration
     uint8_t enable_priority;    ///< Enable/home order (lower = earlier, default = motor index)

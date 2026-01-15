@@ -271,7 +271,9 @@ void Controller::CheckPins() {
                         m_stateMachine.EnterError(ErrorCode::PIN_TIMEOUT, "Digital output timeout");
                         m_response.Event("error")
                             .Param("code", static_cast<uint32_t>(ErrorCode::PIN_TIMEOUT))
-                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("pin", static_cast<int32_t>(pin.pin_index));
+                        if (pin.digital_out.set_id.has_epoch) m_response.Param("epoch", pin.digital_out.set_id.epoch);
+                        m_response.Param("seq", pin.digital_out.set_id.seq)
                             .Param("message", "Output timeout");
                         SendResponse();
                         // Stop all motors on error
@@ -399,6 +401,10 @@ void Controller::CheckMotors() {
                     m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::HLFB_TIMEOUT))
                         .Param("motor", static_cast<int32_t>(motor.motor_index));
+                    if (motor.enable_id.has_epoch) {
+                        m_response.Param("epoch", motor.enable_id.epoch);
+                    }
+                    m_response.Param("seq", motor.enable_id.seq);
                     SendResponse();
                     m_enableAllActive = false;  // Cancel enable_all on error
                 }

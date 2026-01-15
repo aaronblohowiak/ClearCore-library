@@ -155,6 +155,7 @@ static void CmdEnable(Controller* ctrl, const ParsedCommand& cmd) {
 
     slot->enabled = true;
     slot->enable_start_time = CutterHal::Milliseconds();
+    slot->enable_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
     CutterHal::EnableMotor(slot->motor_index, true);
 
     // Transition to ENABLING to wait for HLFB
@@ -504,10 +505,12 @@ static void CmdEnableAll(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Enable all motors in priority order
     // Note: This is synchronous enable - the actual homing happens in CheckMotors
+    CommandId enable_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
     for (size_t i = 0; i < motor_count; i++) {
         MotorSlot* slot = ctrl->GetMotor(motors[i].index);
         slot->enabled = true;
         slot->enable_start_time = CutterHal::Milliseconds();
+        slot->enable_id = enable_id;
         slot->homed = false;
         CutterHal::EnableMotor(slot->motor_index, true);
     }
