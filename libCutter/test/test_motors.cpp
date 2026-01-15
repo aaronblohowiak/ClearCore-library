@@ -30,7 +30,7 @@ protected:
 
     void ConfigureAndEnableStepper(int motor = 0) {
         char cmd[128];
-        snprintf(cmd, sizeof(cmd), "configure_motor motor=%d type=stepper", motor);
+        snprintf(cmd, sizeof(cmd), "configure_stepper motor=%d", motor);
         serial.SendLine(cmd);
         ctrl->Update();
         serial.ClearOutput();
@@ -50,7 +50,7 @@ protected:
 // === Motor Configuration ===
 
 TEST_F(MotorTest, ConfigureClearPath) {
-    serial.SendLine("configure_motor motor=0 type=clearpath vel_max=20000 accel_max=200000");
+    serial.SendLine("configure_sdsk motor=0 vel_max=20000 accel_max=200000");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("ok"));
@@ -60,7 +60,7 @@ TEST_F(MotorTest, ConfigureClearPath) {
 }
 
 TEST_F(MotorTest, ConfigureStepper) {
-    serial.SendLine("configure_motor motor=0 type=stepper");
+    serial.SendLine("configure_stepper motor=0");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("ok"));
@@ -68,7 +68,7 @@ TEST_F(MotorTest, ConfigureStepper) {
 }
 
 TEST_F(MotorTest, ConfigureInvalidMotor) {
-    serial.SendLine("configure_motor motor=5 type=stepper");
+    serial.SendLine("configure_stepper motor=5");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("error"));
@@ -76,17 +76,18 @@ TEST_F(MotorTest, ConfigureInvalidMotor) {
 }
 
 TEST_F(MotorTest, ConfigureInvalidType) {
-    serial.SendLine("configure_motor motor=0 type=servo");
+    // Unknown motor configuration command
+    serial.SendLine("configure_servo motor=0");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("error"));
-    EXPECT_TRUE(serial.HasOutput("Invalid motor type"));
+    EXPECT_TRUE(serial.HasOutput("Unknown command"));
 }
 
 // === Enable/Disable ===
 
 TEST_F(MotorTest, EnableStepper) {
-    serial.SendLine("configure_motor motor=0 type=stepper");
+    serial.SendLine("configure_stepper motor=0");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -107,7 +108,7 @@ TEST_F(MotorTest, EnableStepper) {
 
 TEST_F(MotorTest, EnableNotConfigured) {
     // First configure motor 1 so we get to CONFIGURED state
-    serial.SendLine("configure_motor motor=1 type=stepper");
+    serial.SendLine("configure_stepper motor=1");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -211,7 +212,7 @@ TEST_F(MotorTest, SetPosition) {
 // === Soft Limits ===
 
 TEST_F(MotorTest, SoftLimitsBlock) {
-    serial.SendLine("configure_motor motor=0 type=stepper soft_limits=1 soft_min=0 soft_max=10000");
+    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=10000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -228,7 +229,7 @@ TEST_F(MotorTest, SoftLimitsBlock) {
 }
 
 TEST_F(MotorTest, SoftLimitsAllow) {
-    serial.SendLine("configure_motor motor=0 type=stepper soft_limits=1 soft_min=0 soft_max=10000");
+    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=10000");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();
@@ -246,7 +247,7 @@ TEST_F(MotorTest, SoftLimitsAllow) {
 // === State Validation ===
 
 TEST_F(MotorTest, MoveRequiresReady) {
-    serial.SendLine("configure_motor motor=0 type=stepper");
+    serial.SendLine("configure_stepper motor=0");
     ctrl->Update();
     serial.ClearOutput();
 

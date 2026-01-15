@@ -76,11 +76,15 @@ void SetPwmDuty(uint8_t pin, uint16_t duty) {
 }
 
 void SetPwmFrequency(uint8_t pin, uint32_t freq) {
-    // ClearCore PWM frequency is set globally or per-timer
-    // This is a simplified stub - real implementation would use
-    // the appropriate timer configuration
-    (void)pin;
-    (void)freq;
+    // ClearCore IO pins 0-5 support PWM output
+    // PWM frequency is set per-pin using the DigitalInOut interface
+    if (pin <= 5) {
+        auto* conn = static_cast<ClearCore::DigitalInOut*>(GetConnector(pin));
+        if (conn) {
+            // ClearCore accepts frequency in Hz directly
+            conn->PwmFrequency(freq);
+        }
+    }
 }
 
 void SetHBridgeValue(uint8_t pin, int16_t value) {

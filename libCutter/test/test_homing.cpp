@@ -21,7 +21,7 @@ protected:
         // Connect and configure stepper
         serial.SendLine("ping");
         ctrl->Update();
-        serial.SendLine("configure_motor motor=0 type=stepper end_stop_pin=6 homing_seek_velocity=5000 homing_latch_velocity=500 homing_backoff=200");
+        serial.SendLine("configure_stepper motor=0 end_stop_pin=6 homing_seek_velocity=5000 homing_latch_velocity=500 homing_backoff=200");
         ctrl->Update();
         serial.SendLine("configure_endstop pin=6 active_high=1");
         ctrl->Update();
@@ -49,7 +49,7 @@ TEST_F(HomingTest, HomeCommand) {
 
 TEST_F(HomingTest, HomeOnlyStepper) {
     // Configure as ClearPath
-    serial.SendLine("configure_motor motor=1 type=clearpath");
+    serial.SendLine("configure_sdsk motor=1");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -118,7 +118,7 @@ TEST_F(HomingTest, HomingSequenceComplete) {
 
 TEST_F(HomingTest, HomingActiveLow) {
     // Reconfigure with active_low
-    serial.SendLine("configure_motor motor=0 type=stepper end_stop_pin=6 end_stop_active_high=0");
+    serial.SendLine("configure_stepper motor=0 end_stop_pin=6 end_stop_active_high=0");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6 active_high=0");
     ctrl->Update();

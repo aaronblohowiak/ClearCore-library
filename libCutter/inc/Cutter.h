@@ -75,6 +75,9 @@ enum class HomingState : uint8_t {
 struct DigitalInState {
     bool last_value;
     bool report_changes;
+    bool invert;                // Invert the pin value
+    bool error_trigger_enabled; // Enter error state when trigger value seen
+    bool error_trigger_value;   // Value that triggers error (after invert)
 };
 
 /**
@@ -82,6 +85,10 @@ struct DigitalInState {
  */
 struct DigitalOutState {
     bool current_value;
+    bool on_error_value;        // Value to set when entering error state
+    bool on_error_enabled;      // Apply on_error_value on error
+    uint32_t max_raised_ms;     // Max time pin can be high (0=disabled)
+    uint32_t raise_start_time;  // When pin was last set high
 };
 
 /**
@@ -89,11 +96,18 @@ struct DigitalOutState {
  */
 struct AnalogInState {
     int16_t last_value;
-    int16_t threshold_low;
-    int16_t threshold_high;
-    bool report_threshold;
-    uint32_t sample_interval_ms;
-    uint32_t last_sample_time;
+    // Error thresholds - enter error state if crossed
+    int16_t error_threshold_low;
+    int16_t error_threshold_high;
+    bool error_threshold_enabled;
+    // Stop thresholds - stop motors if crossed
+    int16_t stop_threshold_low;
+    int16_t stop_threshold_high;
+    bool stop_threshold_enabled;
+    // Reporting
+    uint32_t report_interval_ms;    // 0=disabled, else ms between reports
+    uint32_t last_report_time;
+    bool report_threshold_cross;    // Report when crossing thresholds
 };
 
 /**
@@ -165,7 +179,9 @@ struct MotorSlot {
     int32_t homing_latch_velocity;
     int32_t homing_backoff_distance;
 
-    // Completion tracking
+    // ClearPath (SDSK) specific
+    uint8_t enable_priority;    // Enable order (lower = earlier)
+    uint8_t last_hlfb_state;    // For detecting HLFB changes
     uint32_t enable_start_time;
     uint32_t hlfb_timeout_ms;
 };
@@ -253,12 +269,16 @@ private:
     void CheckPins();
     void CheckMotors();
 
+    // Sequence tracking
+    uint32_t next_seq_;
+
     // Built-in commands
     void CmdPing(const ParsedCommand& cmd);
     void CmdReset(const ParsedCommand& cmd);
     void CmdStatus(const ParsedCommand& cmd);
     void CmdVersion(const ParsedCommand& cmd);
     void CmdEmergencyStop(const ParsedCommand& cmd);
+    void CmdGetNextSeq(const ParsedCommand& cmd);
 };
 
 }  // namespace Cutter

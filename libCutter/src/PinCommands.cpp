@@ -47,7 +47,11 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_IN;
     slot->digital_in.report_changes = cmd.GetBoolOr("report_changes", false);
-    slot->digital_in.last_value = CutterHal::ReadDigitalPin(slot->pin_index);
+    slot->digital_in.invert = cmd.GetBoolOr("invert", false);
+    slot->digital_in.error_trigger_enabled = cmd.GetBoolOr("error_trigger", false);
+    slot->digital_in.error_trigger_value = cmd.GetBoolOr("error_value", true);
+    bool raw_val = CutterHal::ReadDigitalPin(slot->pin_index);
+    slot->digital_in.last_value = slot->digital_in.invert ? !raw_val : raw_val;
 
     ctrl->Response().Ok();
     if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
@@ -72,6 +76,10 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_OUT;
     slot->digital_out.current_value = cmd.GetBoolOr("initial", false);
+    slot->digital_out.on_error_enabled = cmd.HasParam("on_error");
+    slot->digital_out.on_error_value = cmd.GetBoolOr("on_error", false);
+    slot->digital_out.max_raised_ms = static_cast<uint32_t>(cmd.GetIntOr("max_raised_ms", 0));
+    slot->digital_out.raise_start_time = 0;
     CutterHal::WriteDigitalPin(slot->pin_index, slot->digital_out.current_value);
 
     ctrl->Response().Ok();
@@ -96,12 +104,23 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::ANALOG_IN;
-    slot->analog_in.threshold_low = static_cast<int16_t>(cmd.GetIntOr("threshold_low", 0));
-    slot->analog_in.threshold_high = static_cast<int16_t>(cmd.GetIntOr("threshold_high", 4095));
-    slot->analog_in.report_threshold = cmd.GetBoolOr("report_threshold", false);
-    slot->analog_in.sample_interval_ms = static_cast<uint32_t>(cmd.GetIntOr("sample_interval", 100));
+
+    // Error thresholds (enter error state if outside range)
+    slot->analog_in.error_threshold_enabled = cmd.HasParam("error_low") || cmd.HasParam("error_high");
+    slot->analog_in.error_threshold_low = static_cast<int16_t>(cmd.GetIntOr("error_low", INT16_MIN));
+    slot->analog_in.error_threshold_high = static_cast<int16_t>(cmd.GetIntOr("error_high", INT16_MAX));
+
+    // Stop thresholds (stop motors if outside range)
+    slot->analog_in.stop_threshold_enabled = cmd.HasParam("stop_low") || cmd.HasParam("stop_high");
+    slot->analog_in.stop_threshold_low = static_cast<int16_t>(cmd.GetIntOr("stop_low", INT16_MIN));
+    slot->analog_in.stop_threshold_high = static_cast<int16_t>(cmd.GetIntOr("stop_high", INT16_MAX));
+
+    // Reporting
+    slot->analog_in.report_interval_ms = static_cast<uint32_t>(cmd.GetIntOr("report_interval", 0));
+    slot->analog_in.report_threshold_cross = cmd.GetBoolOr("report_threshold", false);
+
     slot->analog_in.last_value = CutterHal::ReadAnalogPin(slot->pin_index);
-    slot->analog_in.last_sample_time = CutterHal::Milliseconds();
+    slot->analog_in.last_report_time = CutterHal::Milliseconds();
 
     ctrl->Response().Ok();
     if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
@@ -254,6 +273,11 @@ static void CmdWritePin(Controller* ctrl, const ParsedCommand& cmd) {
 
     slot->digital_out.current_value = value;
     CutterHal::WriteDigitalPin(slot->pin_index, value);
+
+    // Track when pin was set high for timeout checking
+    if (value && slot->digital_out.max_raised_ms > 0) {
+        slot->digital_out.raise_start_time = CutterHal::Milliseconds();
+    }
 
     ctrl->Response().Ok();
     if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);

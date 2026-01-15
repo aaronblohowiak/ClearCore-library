@@ -17,8 +17,7 @@ CUTTER_SRCS = \
 	src/CommandDispatcher.cpp \
 	src/ResponseWriter.cpp \
 	src/PinCommands.cpp \
-	src/MotorCommands.cpp \
-	src/ErrorHandler.cpp
+	src/MotorCommands.cpp
 
 # Test source files
 TEST_SRCS = \

@@ -29,7 +29,8 @@ static bool RequireReady(Controller* ctrl, const ParsedCommand& cmd) {
 
 // === Configuration Commands ===
 
-static void CmdConfigureMotor(Controller* ctrl, const ParsedCommand& cmd) {
+// Configure ClearPath-SD/SK motor (uses HLFB for done/error notification)
+static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     State s = ctrl->GetState();
     if (s == State::UNCONNECTED) {
         SendError(ctrl, cmd, ErrorCode::INVALID_STATE, "Not connected");
@@ -42,43 +43,66 @@ static void CmdConfigureMotor(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
-    const char* type_str = cmd.GetString("type");
-    if (!type_str) {
-        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing type parameter");
-        return;
-    }
-
-    MotorType type;
-    if (strcmp(type_str, "clearpath") == 0) {
-        type = MotorType::CLEARPATH;
-    } else if (strcmp(type_str, "stepper") == 0) {
-        type = MotorType::GENERIC_STEPPER;
-    } else {
-        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM, "Invalid motor type");
-        return;
-    }
-
     MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
     memset(slot, 0, sizeof(MotorSlot));
     slot->motor_index = static_cast<uint8_t>(motor);
-    slot->type = type;
+    slot->type = MotorType::CLEARPATH;
     slot->vel_max = cmd.GetIntOr("vel_max", 10000);
     slot->accel_max = cmd.GetIntOr("accel_max", 100000);
     slot->hlfb_timeout_ms = static_cast<uint32_t>(cmd.GetIntOr("hlfb_timeout", 5000));
+    slot->enable_priority = static_cast<uint8_t>(cmd.GetIntOr("enable_priority", motor));
 
     // Soft limits
     slot->soft_limits_enabled = cmd.GetBoolOr("soft_limits", false);
     slot->soft_limit_min = cmd.GetIntOr("soft_min", INT32_MIN);
     slot->soft_limit_max = cmd.GetIntOr("soft_max", INT32_MAX);
 
-    // Homing config for generic steppers
-    if (type == MotorType::GENERIC_STEPPER) {
-        slot->end_stop_pin = static_cast<uint8_t>(cmd.GetIntOr("end_stop_pin", 6));
-        slot->end_stop_active_high = cmd.GetBoolOr("end_stop_active_high", true);
-        slot->homing_seek_velocity = cmd.GetIntOr("homing_seek_velocity", 5000);
-        slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
-        slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
+    // Set motor parameters in HAL
+    CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
+
+    // Transition to CONFIGURED if we were in CONNECTED
+    if (s == State::CONNECTED) {
+        ctrl->GetStateMachine().TransitionTo(State::CONFIGURED);
     }
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("motor", motor);
+    ctrl->SendResponse();
+}
+
+// Configure generic stepper motor (uses endstop for homing)
+static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
+    State s = ctrl->GetState();
+    if (s == State::UNCONNECTED) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_STATE, "Not connected");
+        return;
+    }
+
+    int32_t motor;
+    if (!cmd.GetInt("motor", &motor) || motor < 0 || motor >= static_cast<int32_t>(NUM_MOTORS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_MOTOR, "Invalid motor");
+        return;
+    }
+
+    MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
+    memset(slot, 0, sizeof(MotorSlot));
+    slot->motor_index = static_cast<uint8_t>(motor);
+    slot->type = MotorType::GENERIC_STEPPER;
+    slot->vel_max = cmd.GetIntOr("vel_max", 10000);
+    slot->accel_max = cmd.GetIntOr("accel_max", 100000);
+
+    // Soft limits
+    slot->soft_limits_enabled = cmd.GetBoolOr("soft_limits", false);
+    slot->soft_limit_min = cmd.GetIntOr("soft_min", INT32_MIN);
+    slot->soft_limit_max = cmd.GetIntOr("soft_max", INT32_MAX);
+
+    // Homing configuration
+    slot->end_stop_pin = static_cast<uint8_t>(cmd.GetIntOr("end_stop_pin", 6));
+    slot->end_stop_active_high = cmd.GetBoolOr("end_stop_active_high", true);
+    slot->homing_seek_velocity = cmd.GetIntOr("homing_seek_velocity", 5000);
+    slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
+    slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
 
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
@@ -432,8 +456,10 @@ void CheckHomingState(Controller* ctrl, MotorSlot& motor) {
 // === Dispatch Function ===
 
 void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd) {
-    if (strcmp(cmd.name, "configure_motor") == 0) {
-        CmdConfigureMotor(ctrl, cmd);
+    if (strcmp(cmd.name, "configure_sdsk") == 0) {
+        CmdConfigureSdsk(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_stepper") == 0) {
+        CmdConfigureStepper(ctrl, cmd);
     } else if (strcmp(cmd.name, "enable") == 0) {
         CmdEnable(ctrl, cmd);
     } else if (strcmp(cmd.name, "disable") == 0) {

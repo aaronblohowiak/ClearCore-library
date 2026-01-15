@@ -88,12 +88,12 @@ TEST_F(ErrorTest, MissingRequiredParam) {
     EXPECT_TRUE(serial.HasOutput("Invalid pin"));
 }
 
-TEST_F(ErrorTest, MissingMotorType) {
-    serial.SendLine("configure_motor motor=0");  // Missing type
+TEST_F(ErrorTest, MissingMotorParam) {
+    serial.SendLine("configure_stepper");  // Missing motor parameter
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("error"));
-    EXPECT_TRUE(serial.HasOutput("Missing type"));
+    EXPECT_TRUE(serial.HasOutput("Invalid motor"));
 }
 
 // === Invalid State ===
@@ -183,7 +183,7 @@ TEST_F(ErrorTest, WriteToUnconfiguredPin) {
 // === Motor Not Ready ===
 
 TEST_F(ErrorTest, MoveWithoutEnable) {
-    serial.SendLine("configure_motor motor=0 type=stepper");
+    serial.SendLine("configure_stepper motor=0");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -197,7 +197,7 @@ TEST_F(ErrorTest, MoveWithoutEnable) {
 
 TEST_F(ErrorTest, EmergencyStop) {
     // Configure and enable a motor
-    serial.SendLine("configure_motor motor=0 type=stepper");
+    serial.SendLine("configure_stepper motor=0");
     ctrl->Update();
     serial.SendLine("configure_endstop pin=6");
     ctrl->Update();

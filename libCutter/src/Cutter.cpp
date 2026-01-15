@@ -13,6 +13,7 @@ Controller::Controller(ISerial* serial)
     , input_pos_(0)
     , response_buffer_{}
     , response_(response_buffer_, sizeof(response_buffer_))
+    , next_seq_(1)
 {
     // Initialize input buffer
     input_buffer_[0] = '\0';
@@ -112,6 +113,10 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         CmdEmergencyStop(cmd);
         return;
     }
+    if (strcmp(cmd.name, "get_next_seq") == 0) {
+        CmdGetNextSeq(cmd);
+        return;
+    }
 
     // Pin configuration commands (require CONNECTED or higher)
     if (strcmp(cmd.name, "configure_digital_in") == 0 ||
@@ -139,7 +144,8 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
     }
 
     // Motor configuration commands
-    if (strcmp(cmd.name, "configure_motor") == 0) {
+    if (strcmp(cmd.name, "configure_sdsk") == 0 ||
+        strcmp(cmd.name, "configure_stepper") == 0) {
         extern void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd);
         DispatchMotorCommand(this, cmd);
         return;
@@ -177,40 +183,135 @@ void Controller::CheckPins() {
 
         switch (pin.mode) {
             case PinMode::DIGITAL_IN: {
-                if (pin.digital_in.report_changes) {
-                    bool val = CutterHal::ReadDigitalPin(pin.pin_index);
-                    if (val != pin.digital_in.last_value) {
-                        pin.digital_in.last_value = val;
-                        response_.Event("input")
+                bool raw_val = CutterHal::ReadDigitalPin(pin.pin_index);
+                bool val = pin.digital_in.invert ? !raw_val : raw_val;
+
+                // Check error trigger
+                if (pin.digital_in.error_trigger_enabled && val == pin.digital_in.error_trigger_value) {
+                    state_machine_.EnterError(ErrorCode::PIN_NOT_CONFIGURED, "Digital input error trigger");
+                    response_.Event("error")
+                        .Param("code", static_cast<uint32_t>(ErrorCode::PIN_NOT_CONFIGURED))
+                        .Param("pin", static_cast<int32_t>(pin.pin_index))
+                        .Param("message", "Error trigger activated");
+                    SendResponse();
+                    // Stop all motors on error
+                    for (size_t j = 0; j < NUM_MOTORS; j++) {
+                        if (motors_[j].type != MotorType::UNCONFIGURED) {
+                            CutterHal::StopMotor(motors_[j].motor_index, true);
+                            motors_[j].moving = false;
+                        }
+                    }
+                    // Apply on_error values to digital outputs
+                    for (size_t j = 0; j < NUM_PINS; j++) {
+                        if (pins_[j].mode == PinMode::DIGITAL_OUT && pins_[j].digital_out.on_error_enabled) {
+                            CutterHal::WriteDigitalPin(pins_[j].pin_index, pins_[j].digital_out.on_error_value);
+                        }
+                    }
+                    return;
+                }
+
+                // Report changes
+                if (pin.digital_in.report_changes && val != pin.digital_in.last_value) {
+                    pin.digital_in.last_value = val;
+                    response_.Event("input")
+                        .Param("pin", static_cast<int32_t>(pin.pin_index))
+                        .Param("value", val);
+                    SendResponse();
+                }
+                break;
+            }
+
+            case PinMode::DIGITAL_OUT: {
+                // Check timeout
+                if (pin.digital_out.max_raised_ms > 0 && pin.digital_out.current_value) {
+                    if ((now - pin.digital_out.raise_start_time) > pin.digital_out.max_raised_ms) {
+                        state_machine_.EnterError(ErrorCode::PIN_NOT_CONFIGURED, "Digital output timeout");
+                        response_.Event("error")
+                            .Param("code", static_cast<uint32_t>(ErrorCode::PIN_NOT_CONFIGURED))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
-                            .Param("value", val);
+                            .Param("message", "Output timeout");
                         SendResponse();
+                        // Stop all motors on error
+                        for (size_t j = 0; j < NUM_MOTORS; j++) {
+                            if (motors_[j].type != MotorType::UNCONFIGURED) {
+                                CutterHal::StopMotor(motors_[j].motor_index, true);
+                                motors_[j].moving = false;
+                            }
+                        }
+                        return;
                     }
                 }
                 break;
             }
 
             case PinMode::ANALOG_IN: {
-                if (pin.analog_in.report_threshold) {
-                    if ((now - pin.analog_in.last_sample_time) >= pin.analog_in.sample_interval_ms) {
-                        pin.analog_in.last_sample_time = now;
-                        int16_t val = CutterHal::ReadAnalogPin(pin.pin_index);
+                int16_t val = CutterHal::ReadAnalogPin(pin.pin_index);
 
-                        bool was_in_range = (pin.analog_in.last_value >= pin.analog_in.threshold_low &&
-                                            pin.analog_in.last_value <= pin.analog_in.threshold_high);
-                        bool is_in_range = (val >= pin.analog_in.threshold_low &&
-                                           val <= pin.analog_in.threshold_high);
-
-                        if (was_in_range != is_in_range) {
-                            response_.Event("threshold")
-                                .Param("pin", static_cast<int32_t>(pin.pin_index))
-                                .Param("value", static_cast<int32_t>(val))
-                                .Param("in_range", is_in_range);
-                            SendResponse();
+                // Check error thresholds
+                if (pin.analog_in.error_threshold_enabled) {
+                    if (val < pin.analog_in.error_threshold_low || val > pin.analog_in.error_threshold_high) {
+                        state_machine_.EnterError(ErrorCode::PIN_NOT_CONFIGURED, "Analog error threshold");
+                        response_.Event("error")
+                            .Param("code", static_cast<uint32_t>(ErrorCode::PIN_NOT_CONFIGURED))
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("value", static_cast<int32_t>(val))
+                            .Param("message", "Analog threshold exceeded");
+                        SendResponse();
+                        // Stop all motors on error
+                        for (size_t j = 0; j < NUM_MOTORS; j++) {
+                            if (motors_[j].type != MotorType::UNCONFIGURED) {
+                                CutterHal::StopMotor(motors_[j].motor_index, true);
+                                motors_[j].moving = false;
+                            }
                         }
-                        pin.analog_in.last_value = val;
+                        return;
                     }
                 }
+
+                // Check stop thresholds (stop motors but don't enter error)
+                if (pin.analog_in.stop_threshold_enabled) {
+                    if (val < pin.analog_in.stop_threshold_low || val > pin.analog_in.stop_threshold_high) {
+                        // Stop all motors
+                        for (size_t j = 0; j < NUM_MOTORS; j++) {
+                            if (motors_[j].type != MotorType::UNCONFIGURED && motors_[j].moving) {
+                                CutterHal::StopMotor(motors_[j].motor_index, false);
+                                motors_[j].moving = false;
+                            }
+                        }
+                        response_.Event("threshold_stop")
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("value", static_cast<int32_t>(val));
+                        SendResponse();
+                    }
+                }
+
+                // Periodic reporting
+                if (pin.analog_in.report_interval_ms > 0) {
+                    if ((now - pin.analog_in.last_report_time) >= pin.analog_in.report_interval_ms) {
+                        pin.analog_in.last_report_time = now;
+                        response_.Event("analog")
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("value", static_cast<int32_t>(val));
+                        SendResponse();
+                    }
+                }
+
+                // Threshold crossing reporting
+                if (pin.analog_in.report_threshold_cross) {
+                    bool was_in_range = (pin.analog_in.last_value >= pin.analog_in.stop_threshold_low &&
+                                        pin.analog_in.last_value <= pin.analog_in.stop_threshold_high);
+                    bool is_in_range = (val >= pin.analog_in.stop_threshold_low &&
+                                       val <= pin.analog_in.stop_threshold_high);
+
+                    if (was_in_range != is_in_range) {
+                        response_.Event("threshold")
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("value", static_cast<int32_t>(val))
+                            .Param("in_range", is_in_range);
+                        SendResponse();
+                    }
+                }
+                pin.analog_in.last_value = val;
                 break;
             }
 
@@ -226,6 +327,18 @@ void Controller::CheckMotors() {
     for (size_t i = 0; i < NUM_MOTORS; i++) {
         MotorSlot& motor = motors_[i];
         if (motor.type == MotorType::UNCONFIGURED) continue;
+
+        // Check for HLFB state changes (ClearPath only)
+        if (motor.type == MotorType::CLEARPATH && motor.enabled) {
+            uint8_t hlfb_state = CutterHal::GetHlfbState(motor.motor_index);
+            if (hlfb_state != motor.last_hlfb_state) {
+                motor.last_hlfb_state = hlfb_state;
+                response_.Event("hlfb")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("state", static_cast<int32_t>(hlfb_state));
+                SendResponse();
+            }
+        }
 
         // Check for HLFB timeout during enabling
         if (state_machine_.GetState() == State::ENABLING && motor.enabled) {
@@ -414,6 +527,15 @@ void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
     response_.Event("error")
         .Param("code", static_cast<uint32_t>(ErrorCode::EMERGENCY_STOP))
         .Param("message", "Emergency stop activated");
+    SendResponse();
+}
+
+void Controller::CmdGetNextSeq(const ParsedCommand& cmd) {
+    response_.Ok();
+    if (cmd.has_seq) {
+        response_.Param("seq", cmd.seq);
+    }
+    response_.Param("next_seq", next_seq_);
     SendResponse();
 }
 
