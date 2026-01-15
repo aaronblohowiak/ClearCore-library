@@ -18,16 +18,6 @@ static void SendError(Controller* ctrl, const ParsedCommand& cmd,
     ctrl->SendResponse();
 }
 
-// Helper to require specific states
-static bool RequireState(Controller* ctrl, const ParsedCommand& cmd,
-                         State required, const char* msg) {
-    if (ctrl->GetState() != required) {
-        SendError(ctrl, cmd, ErrorCode::INVALID_STATE, msg);
-        return false;
-    }
-    return true;
-}
-
 static bool RequireReady(Controller* ctrl, const ParsedCommand& cmd) {
     State s = ctrl->GetState();
     if (s != State::READY && s != State::WORKING) {

@@ -108,6 +108,10 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         CmdVersion(cmd);
         return;
     }
+    if (strcmp(cmd.name, "emergency_stop") == 0) {
+        CmdEmergencyStop(cmd);
+        return;
+    }
 
     // Pin configuration commands (require CONNECTED or higher)
     if (strcmp(cmd.name, "configure_digital_in") == 0 ||
@@ -382,6 +386,34 @@ void Controller::CmdVersion(const ParsedCommand& cmd) {
     }
     response_.Param("version", CUTTER_VERSION);
     response_.Param("protocol", PROTOCOL_VERSION);
+    SendResponse();
+}
+
+void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
+    // Stop all motors immediately
+    for (size_t i = 0; i < NUM_MOTORS; i++) {
+        if (motors_[i].type != MotorType::UNCONFIGURED) {
+            CutterHal::StopMotor(motors_[i].motor_index, true);  // immediate stop
+            motors_[i].moving = false;
+            motors_[i].homing_state = HomingState::IDLE;
+        }
+    }
+
+    // Enter error state
+    state_machine_.EnterError(ErrorCode::EMERGENCY_STOP, "Emergency stop");
+
+    // Send response
+    response_.Ok();
+    if (cmd.has_seq) {
+        response_.Param("seq", cmd.seq);
+    }
+    response_.Param("epoch", state_machine_.GetEpoch());
+    SendResponse();
+
+    // Send error event
+    response_.Event("error")
+        .Param("code", static_cast<uint32_t>(ErrorCode::EMERGENCY_STOP))
+        .Param("message", "Emergency stop activated");
     SendResponse();
 }
 

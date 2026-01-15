@@ -258,6 +258,7 @@ private:
     void CmdReset(const ParsedCommand& cmd);
     void CmdStatus(const ParsedCommand& cmd);
     void CmdVersion(const ParsedCommand& cmd);
+    void CmdEmergencyStop(const ParsedCommand& cmd);
 };
 
 }  // namespace Cutter

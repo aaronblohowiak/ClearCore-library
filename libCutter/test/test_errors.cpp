@@ -192,3 +192,39 @@ TEST_F(ErrorTest, MoveWithoutEnable) {
 
     EXPECT_TRUE(serial.HasOutput("error"));
 }
+
+// === Emergency Stop ===
+
+TEST_F(ErrorTest, EmergencyStop) {
+    // Configure and enable a motor
+    serial.SendLine("configure_motor motor=0 type=stepper");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Start a move
+    serial.SendLine("move motor=0 steps=10000");
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetState(), State::WORKING);
+    serial.ClearOutput();
+
+    // Emergency stop
+    serial.SendLine("emergency_stop");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+    EXPECT_EQ(ctrl->GetStateMachine().GetErrorCode(), ErrorCode::EMERGENCY_STOP);
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(ErrorTest, EmergencyStopFromReady) {
+    serial.SendLine("emergency_stop");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}

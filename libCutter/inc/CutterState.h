@@ -64,6 +64,7 @@ enum class ErrorCode : uint32_t {
 
     // System errors (400-499)
     INTERNAL_ERROR = 400,
+    EMERGENCY_STOP = 401,
 };
 
 /**
