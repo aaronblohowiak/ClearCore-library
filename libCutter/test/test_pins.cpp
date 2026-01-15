@@ -414,3 +414,43 @@ TEST_F(PinTest, AnalogPeriodicReporting) {
     EXPECT_TRUE(serial.HasOutput("pin=9"));
     EXPECT_TRUE(serial.HasOutput("value=1000"));
 }
+
+// === Time Rollover Tests ===
+
+TEST_F(PinTest, DigitalOutputTimeoutRollover) {
+    // Set time near UINT32_MAX
+    g_fake.time_ms = 0xFFFFFF00;
+
+    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    ctrl->Update();
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Advance past rollover (0xFFFFFF00 + 0x200 = 0x00000100)
+    g_fake.time_ms = 0x00000100;  // Rolled over
+    ctrl->Update();
+
+    // 0x100 - 0xFFFFFF00 = 0x200 (512ms) > 100ms, should timeout
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, AnalogReportingRollover) {
+    // Set time near UINT32_MAX
+    g_fake.time_ms = 0xFFFFFF00;
+
+    serial.SendLine("configure_analog_in pin=9 report_interval=100");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    SET_ANALOG(9, 2000);
+
+    // Advance past rollover
+    g_fake.time_ms = 0x00000100;  // Rolled over, elapsed = 0x200 (512ms)
+    ctrl->Update();
+
+    // Should have reported since 512ms > 100ms interval
+    EXPECT_TRUE(serial.HasEvent("analog"));
+    EXPECT_TRUE(serial.HasOutput("value=2000"));
+}
