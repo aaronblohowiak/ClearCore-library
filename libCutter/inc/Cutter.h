@@ -31,6 +31,17 @@ namespace Cutter {
 
     Stores epoch and seq pair from commands for later use in events.
     Events emit both values when has_epoch is true, otherwise just seq.
+
+    \par Usage
+    CommandId is stored when initiating async operations:
+    - Motor moves: Stored in MotorSlot::move_id, emitted in "done" and "soft_limit" events
+    - Motor enable: Stored in MotorSlot::enable_id, emitted in "hlfb_timeout" error
+    - Pin timeout: Stored in DigitalOutState::set_id, emitted in "pin_timeout" error
+
+    \par Event Correlation
+    Host sends: `move motor=0 steps=1000 epoch=5 seq=42`
+    Cutter responds: `event type=done motor=0 epoch=5 seq=42 position=1000`
+    This allows the host to match async events back to the originating command.
 **/
 struct CommandId {
     uint32_t epoch;
