@@ -83,22 +83,22 @@ public:
     /**
      * \brief Get current state
      */
-    State GetState() const { return state_; }
+    State GetState() const { return m_state; }
 
     /**
      * \brief Get current epoch
      */
-    uint32_t GetEpoch() const { return epoch_; }
+    uint32_t GetEpoch() const { return m_epoch; }
 
     /**
      * \brief Get current error code (if in ERROR state)
      */
-    ErrorCode GetErrorCode() const { return error_code_; }
+    ErrorCode GetErrorCode() const { return m_errorCode; }
 
     /**
      * \brief Get error message (if in ERROR state)
      */
-    const char* GetErrorMessage() const { return error_message_; }
+    const char* GetErrorMessage() const { return m_errorMessage; }
 
     /**
      * \brief Check if a state transition is valid
@@ -135,10 +135,10 @@ public:
     void MarkDisconnected();
 
 private:
-    State state_;
-    uint32_t epoch_;
-    ErrorCode error_code_;
-    char error_message_[64];
+    State m_state;
+    uint32_t m_epoch;
+    ErrorCode m_errorCode;
+    char m_errorMessage[64];
 };
 
 }  // namespace Cutter

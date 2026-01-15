@@ -277,7 +277,7 @@ public:
 
         \return Current state (UNCONNECTED, CONNECTED, CONFIGURED, etc.)
     **/
-    State GetState() const { return state_machine_.GetState(); }
+    State GetState() const { return m_stateMachine.GetState(); }
 
     /**
         \brief Get current epoch
@@ -287,7 +287,7 @@ public:
 
         \return Current epoch value
     **/
-    uint32_t GetEpoch() const { return state_machine_.GetEpoch(); }
+    uint32_t GetEpoch() const { return m_stateMachine.GetEpoch(); }
 
     /**
         \brief Send an event to the host
@@ -301,7 +301,7 @@ public:
 
         \return Reference to response writer
     **/
-    ResponseWriter& Response() { return response_; }
+    ResponseWriter& Response() { return m_response; }
 
     /**
         \brief Send the current response buffer
@@ -345,29 +345,29 @@ public:
 
         \return Reference to state machine
     **/
-    StateMachine& GetStateMachine() { return state_machine_; }
+    StateMachine& GetStateMachine() { return m_stateMachine; }
 
 private:
     // Serial communication
-    ISerial* serial_;
-    char input_buffer_[MAX_COMMAND_LENGTH];
-    size_t input_pos_;
+    ISerial* m_serial;
+    char m_inputBuffer[MAX_COMMAND_LENGTH];
+    size_t m_inputPos;
 
     // State
-    StateMachine state_machine_;
+    StateMachine m_stateMachine;
 
     // Response buffer
-    char response_buffer_[MAX_RESPONSE_LENGTH];
-    ResponseWriter response_;
+    char m_responseBuffer[MAX_RESPONSE_LENGTH];
+    ResponseWriter m_response;
 
     // Parser
-    CommandParser parser_;
+    CommandParser m_parser;
 
     // Pin slots
-    PinSlot pins_[NUM_PINS];
+    PinSlot m_pins[NUM_PINS];
 
     // Motor slots
-    MotorSlot motors_[NUM_MOTORS];
+    MotorSlot m_motors[NUM_MOTORS];
 
     // Internal methods
     void ProcessInput();
@@ -377,7 +377,7 @@ private:
     void CheckMotors();
 
     // Sequence tracking
-    uint32_t next_seq_;
+    uint32_t m_nextSeq;
 
     // Built-in commands
     void CmdPing(const ParsedCommand& cmd);

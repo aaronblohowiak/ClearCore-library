@@ -116,26 +116,26 @@ public:
      * \brief Get current buffer contents (without finalizing)
      * \return Pointer to the response string
      */
-    const char* Get() const { return buffer_; }
+    const char* Get() const { return m_buffer; }
 
     /**
      * \brief Get current length of response
      * \return Number of characters written (excluding null)
      */
-    size_t Length() const { return pos_; }
+    size_t Length() const { return m_pos; }
 
     /**
      * \brief Check if buffer overflowed during construction
      * \return true if overflow occurred
      */
-    bool Overflowed() const { return overflowed_; }
+    bool Overflowed() const { return m_overflowed; }
 
 private:
-    char* buffer_;
-    size_t buffer_size_;
-    size_t pos_;
-    bool overflowed_;
-    bool finished_;
+    char* m_buffer;
+    size_t m_bufferSize;
+    size_t m_pos;
+    bool m_overflowed;
+    bool m_finished;
 
     /**
      * \brief Append a string to the buffer

@@ -9,26 +9,26 @@
 namespace Cutter {
 
 Controller::Controller(ISerial* serial)
-    : serial_(serial)
-    , input_pos_(0)
-    , response_buffer_{}
-    , response_(response_buffer_, sizeof(response_buffer_))
-    , next_seq_(1)
+    : m_serial(serial)
+    , m_inputPos(0)
+    , m_responseBuffer{}
+    , m_response(m_responseBuffer, sizeof(m_responseBuffer))
+    , m_nextSeq(1)
 {
     // Initialize input buffer
-    input_buffer_[0] = '\0';
+    m_inputBuffer[0] = '\0';
 
     // Initialize pins to unconfigured
     for (size_t i = 0; i < NUM_PINS; i++) {
-        pins_[i].mode = PinMode::UNCONFIGURED;
-        pins_[i].pin_index = static_cast<uint8_t>(i);
+        m_pins[i].mode = PinMode::UNCONFIGURED;
+        m_pins[i].pin_index = static_cast<uint8_t>(i);
     }
 
     // Initialize motors to unconfigured
     for (size_t i = 0; i < NUM_MOTORS; i++) {
-        memset(&motors_[i], 0, sizeof(MotorSlot));
-        motors_[i].type = MotorType::UNCONFIGURED;
-        motors_[i].motor_index = static_cast<uint8_t>(i);
+        memset(&m_motors[i], 0, sizeof(MotorSlot));
+        m_motors[i].type = MotorType::UNCONFIGURED;
+        m_motors[i].motor_index = static_cast<uint8_t>(i);
     }
 }
 
@@ -49,30 +49,30 @@ void Controller::Update() {
 
 void Controller::ProcessInput() {
     // Read characters until newline or buffer full
-    while (serial_->AvailableForRead() > 0) {
-        int16_t c = serial_->CharGet();
+    while (m_serial->AvailableForRead() > 0) {
+        int16_t c = m_serial->CharGet();
         if (c < 0) break;
 
         // On first character, mark as connected
-        if (state_machine_.GetState() == State::UNCONNECTED) {
-            state_machine_.MarkConnected();
+        if (m_stateMachine.GetState() == State::UNCONNECTED) {
+            m_stateMachine.MarkConnected();
         }
 
         if (c == '\n' || c == '\r') {
             // End of line - process command
-            if (input_pos_ > 0) {
-                input_buffer_[input_pos_] = '\0';
+            if (m_inputPos > 0) {
+                m_inputBuffer[m_inputPos] = '\0';
 
                 ParsedCommand cmd;
-                if (parser_.Parse(input_buffer_, &cmd)) {
+                if (m_parser.Parse(m_inputBuffer, &cmd)) {
                     DispatchCommand(cmd);
                 }
                 // Empty/comment lines are silently ignored
 
-                input_pos_ = 0;
+                m_inputPos = 0;
             }
-        } else if (input_pos_ < sizeof(input_buffer_) - 1) {
-            input_buffer_[input_pos_++] = static_cast<char>(c);
+        } else if (m_inputPos < sizeof(m_inputBuffer) - 1) {
+            m_inputBuffer[m_inputPos++] = static_cast<char>(c);
         }
         // Overflow: continue reading but don't store
     }
@@ -80,14 +80,14 @@ void Controller::ProcessInput() {
 
 void Controller::DispatchCommand(const ParsedCommand& cmd) {
     // Check epoch if provided
-    if (cmd.has_epoch && cmd.epoch != state_machine_.GetEpoch()) {
-        response_.Error(static_cast<uint32_t>(ErrorCode::EPOCH_MISMATCH),
+    if (cmd.has_epoch && cmd.epoch != m_stateMachine.GetEpoch()) {
+        m_response.Error(static_cast<uint32_t>(ErrorCode::EPOCH_MISMATCH),
                        "Epoch mismatch");
         if (cmd.has_seq) {
-            response_.Param("seq", cmd.seq);
+            m_response.Param("seq", cmd.seq);
         }
-        response_.Param("expected", state_machine_.GetEpoch());
-        response_.Param("got", cmd.epoch);
+        m_response.Param("expected", m_stateMachine.GetEpoch());
+        m_response.Param("got", cmd.epoch);
         SendResponse();
         return;
     }
@@ -165,12 +165,12 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
     }
 
     // Unknown command
-    response_.Error(static_cast<uint32_t>(ErrorCode::UNKNOWN_COMMAND),
+    m_response.Error(static_cast<uint32_t>(ErrorCode::UNKNOWN_COMMAND),
                    "Unknown command");
     if (cmd.has_seq) {
-        response_.Param("seq", cmd.seq);
+        m_response.Param("seq", cmd.seq);
     }
-    response_.Param("command", cmd.name);
+    m_response.Param("command", cmd.name);
     SendResponse();
 }
 
@@ -178,7 +178,7 @@ void Controller::CheckPins() {
     uint32_t now = CutterHal::Milliseconds();
 
     for (size_t i = 0; i < NUM_PINS; i++) {
-        PinSlot& pin = pins_[i];
+        PinSlot& pin = m_pins[i];
         if (pin.mode == PinMode::UNCONFIGURED) continue;
 
         switch (pin.mode) {
@@ -188,23 +188,23 @@ void Controller::CheckPins() {
 
                 // Check error trigger
                 if (pin.digital_in.error_trigger_enabled && val == pin.digital_in.error_trigger_value) {
-                    state_machine_.EnterError(ErrorCode::PIN_ERROR_TRIGGER, "Digital input error trigger");
-                    response_.Event("error")
+                    m_stateMachine.EnterError(ErrorCode::PIN_ERROR_TRIGGER, "Digital input error trigger");
+                    m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::PIN_ERROR_TRIGGER))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
                         .Param("message", "Error trigger activated");
                     SendResponse();
                     // Stop all motors on error
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
-                        if (motors_[j].type != MotorType::UNCONFIGURED) {
-                            CutterHal::StopMotor(motors_[j].motor_index, true);
-                            motors_[j].moving = false;
+                        if (m_motors[j].type != MotorType::UNCONFIGURED) {
+                            CutterHal::StopMotor(m_motors[j].motor_index, true);
+                            m_motors[j].moving = false;
                         }
                     }
                     // Apply on_error values to digital outputs
                     for (size_t j = 0; j < NUM_PINS; j++) {
-                        if (pins_[j].mode == PinMode::DIGITAL_OUT && pins_[j].digital_out.on_error_enabled) {
-                            CutterHal::WriteDigitalPin(pins_[j].pin_index, pins_[j].digital_out.on_error_value);
+                        if (m_pins[j].mode == PinMode::DIGITAL_OUT && m_pins[j].digital_out.on_error_enabled) {
+                            CutterHal::WriteDigitalPin(m_pins[j].pin_index, m_pins[j].digital_out.on_error_value);
                         }
                     }
                     return;
@@ -213,7 +213,7 @@ void Controller::CheckPins() {
                 // Report changes
                 if (pin.digital_in.report_changes && val != pin.digital_in.last_value) {
                     pin.digital_in.last_value = val;
-                    response_.Event("input")
+                    m_response.Event("input")
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
                         .Param("value", val);
                     SendResponse();
@@ -224,17 +224,17 @@ void Controller::CheckPins() {
             case PinMode::DIGITAL_OUT: {
                 // Check hardware fault (overcurrent)
                 if (CutterHal::IsPinInFault(pin.pin_index)) {
-                    state_machine_.EnterError(ErrorCode::PIN_OVERCURRENT, "Pin overcurrent");
-                    response_.Event("error")
+                    m_stateMachine.EnterError(ErrorCode::PIN_OVERCURRENT, "Pin overcurrent");
+                    m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::PIN_OVERCURRENT))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
                         .Param("message", "Pin overcurrent fault");
                     SendResponse();
                     // Stop all motors on error
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
-                        if (motors_[j].type != MotorType::UNCONFIGURED) {
-                            CutterHal::StopMotor(motors_[j].motor_index, true);
-                            motors_[j].moving = false;
+                        if (m_motors[j].type != MotorType::UNCONFIGURED) {
+                            CutterHal::StopMotor(m_motors[j].motor_index, true);
+                            m_motors[j].moving = false;
                         }
                     }
                     return;
@@ -243,17 +243,17 @@ void Controller::CheckPins() {
                 // Check timeout
                 if (pin.digital_out.max_raised_ms > 0 && pin.digital_out.current_value) {
                     if ((now - pin.digital_out.raise_start_time) > pin.digital_out.max_raised_ms) {
-                        state_machine_.EnterError(ErrorCode::PIN_TIMEOUT, "Digital output timeout");
-                        response_.Event("error")
+                        m_stateMachine.EnterError(ErrorCode::PIN_TIMEOUT, "Digital output timeout");
+                        m_response.Event("error")
                             .Param("code", static_cast<uint32_t>(ErrorCode::PIN_TIMEOUT))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("message", "Output timeout");
                         SendResponse();
                         // Stop all motors on error
                         for (size_t j = 0; j < NUM_MOTORS; j++) {
-                            if (motors_[j].type != MotorType::UNCONFIGURED) {
-                                CutterHal::StopMotor(motors_[j].motor_index, true);
-                                motors_[j].moving = false;
+                            if (m_motors[j].type != MotorType::UNCONFIGURED) {
+                                CutterHal::StopMotor(m_motors[j].motor_index, true);
+                                m_motors[j].moving = false;
                             }
                         }
                         return;
@@ -268,8 +268,8 @@ void Controller::CheckPins() {
                 // Check error thresholds
                 if (pin.analog_in.error_threshold_enabled) {
                     if (val < pin.analog_in.error_threshold_low || val > pin.analog_in.error_threshold_high) {
-                        state_machine_.EnterError(ErrorCode::ANALOG_THRESHOLD, "Analog error threshold");
-                        response_.Event("error")
+                        m_stateMachine.EnterError(ErrorCode::ANALOG_THRESHOLD, "Analog error threshold");
+                        m_response.Event("error")
                             .Param("code", static_cast<uint32_t>(ErrorCode::ANALOG_THRESHOLD))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("value", static_cast<int32_t>(val))
@@ -277,9 +277,9 @@ void Controller::CheckPins() {
                         SendResponse();
                         // Stop all motors on error
                         for (size_t j = 0; j < NUM_MOTORS; j++) {
-                            if (motors_[j].type != MotorType::UNCONFIGURED) {
-                                CutterHal::StopMotor(motors_[j].motor_index, true);
-                                motors_[j].moving = false;
+                            if (m_motors[j].type != MotorType::UNCONFIGURED) {
+                                CutterHal::StopMotor(m_motors[j].motor_index, true);
+                                m_motors[j].moving = false;
                             }
                         }
                         return;
@@ -290,7 +290,7 @@ void Controller::CheckPins() {
                 if (pin.analog_in.report_interval_ms > 0) {
                     if ((now - pin.analog_in.last_report_time) >= pin.analog_in.report_interval_ms) {
                         pin.analog_in.last_report_time = now;
-                        response_.Event("analog")
+                        m_response.Event("analog")
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("value", static_cast<int32_t>(val));
                         SendResponse();
@@ -311,22 +311,22 @@ void Controller::CheckMotors() {
     uint32_t now = CutterHal::Milliseconds();
 
     for (size_t i = 0; i < NUM_MOTORS; i++) {
-        MotorSlot& motor = motors_[i];
+        MotorSlot& motor = m_motors[i];
         if (motor.type == MotorType::UNCONFIGURED) continue;
 
         // Check for hardware fault
         if (CutterHal::IsMotorInFault(motor.motor_index)) {
-            state_machine_.EnterError(ErrorCode::MOTOR_FAULT, "Motor hardware fault");
-            response_.Event("error")
+            m_stateMachine.EnterError(ErrorCode::MOTOR_FAULT, "Motor hardware fault");
+            m_response.Event("error")
                 .Param("code", static_cast<uint32_t>(ErrorCode::MOTOR_FAULT))
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
                 .Param("message", "Motor hardware fault");
             SendResponse();
             // Stop all motors
             for (size_t j = 0; j < NUM_MOTORS; j++) {
-                if (motors_[j].type != MotorType::UNCONFIGURED) {
-                    CutterHal::StopMotor(motors_[j].motor_index, true);
-                    motors_[j].moving = false;
+                if (m_motors[j].type != MotorType::UNCONFIGURED) {
+                    CutterHal::StopMotor(m_motors[j].motor_index, true);
+                    m_motors[j].moving = false;
                 }
             }
             return;
@@ -337,7 +337,7 @@ void Controller::CheckMotors() {
             uint8_t hlfb_state = CutterHal::GetHlfbState(motor.motor_index);
             if (hlfb_state != motor.last_hlfb_state) {
                 motor.last_hlfb_state = hlfb_state;
-                response_.Event("hlfb")
+                m_response.Event("hlfb")
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("state", static_cast<int32_t>(hlfb_state));
                 SendResponse();
@@ -345,27 +345,27 @@ void Controller::CheckMotors() {
         }
 
         // Check for HLFB timeout during enabling
-        if (state_machine_.GetState() == State::ENABLING && motor.enabled) {
+        if (m_stateMachine.GetState() == State::ENABLING && motor.enabled) {
             if (motor.type == MotorType::CLEARPATH) {
                 if (CutterHal::IsMotorReady(motor.motor_index)) {
                     // Motor is ready - transition to READY if all motors ready
                     bool all_ready = true;
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
-                        if (motors_[j].type != MotorType::UNCONFIGURED &&
-                            motors_[j].enabled &&
-                            !CutterHal::IsMotorReady(motors_[j].motor_index)) {
+                        if (m_motors[j].type != MotorType::UNCONFIGURED &&
+                            m_motors[j].enabled &&
+                            !CutterHal::IsMotorReady(m_motors[j].motor_index)) {
                             all_ready = false;
                             break;
                         }
                     }
                     if (all_ready) {
-                        state_machine_.TransitionTo(State::READY);
+                        m_stateMachine.TransitionTo(State::READY);
                     }
                 } else if ((now - motor.enable_start_time) > motor.hlfb_timeout_ms) {
                     // HLFB timeout
-                    state_machine_.EnterError(ErrorCode::HLFB_TIMEOUT,
+                    m_stateMachine.EnterError(ErrorCode::HLFB_TIMEOUT,
                                              "Motor HLFB timeout");
-                    response_.Event("error")
+                    m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::HLFB_TIMEOUT))
                         .Param("motor", static_cast<int32_t>(motor.motor_index));
                     SendResponse();
@@ -376,7 +376,7 @@ void Controller::CheckMotors() {
         // Check for move completion
         if (motor.moving && CutterHal::StepsComplete(motor.motor_index)) {
             motor.moving = false;
-            response_.Event("done")
+            m_response.Event("done")
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
                 .Param("seq", motor.move_seq)
                 .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
@@ -385,13 +385,13 @@ void Controller::CheckMotors() {
             // If no motors are moving, transition back to READY
             bool any_moving = false;
             for (size_t j = 0; j < NUM_MOTORS; j++) {
-                if (motors_[j].moving) {
+                if (m_motors[j].moving) {
                     any_moving = true;
                     break;
                 }
             }
-            if (!any_moving && state_machine_.GetState() == State::WORKING) {
-                state_machine_.TransitionTo(State::READY);
+            if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                m_stateMachine.TransitionTo(State::READY);
             }
         }
 
@@ -407,139 +407,139 @@ void Controller::CheckMotors() {
 }
 
 void Controller::SendEvent(const char* type) {
-    response_.Event(type);
+    m_response.Event(type);
     SendResponse();
 }
 
 void Controller::SendResponse() {
-    const char* resp = response_.Finish();
-    serial_->Send(resp);
-    response_.Reset();
+    const char* resp = m_response.Finish();
+    m_serial->Send(resp);
+    m_response.Reset();
 }
 
 PinSlot* Controller::GetPin(uint8_t index) {
     if (index >= NUM_PINS) return nullptr;
-    return &pins_[index];
+    return &m_pins[index];
 }
 
 const PinSlot* Controller::GetPin(uint8_t index) const {
     if (index >= NUM_PINS) return nullptr;
-    return &pins_[index];
+    return &m_pins[index];
 }
 
 MotorSlot* Controller::GetMotor(uint8_t index) {
     if (index >= NUM_MOTORS) return nullptr;
-    return &motors_[index];
+    return &m_motors[index];
 }
 
 const MotorSlot* Controller::GetMotor(uint8_t index) const {
     if (index >= NUM_MOTORS) return nullptr;
-    return &motors_[index];
+    return &m_motors[index];
 }
 
 // Built-in commands
 
 void Controller::CmdPing(const ParsedCommand& cmd) {
-    response_.Ok();
+    m_response.Ok();
     if (cmd.has_seq) {
-        response_.Param("seq", cmd.seq);
+        m_response.Param("seq", cmd.seq);
     }
     SendResponse();
 }
 
 void Controller::CmdReset(const ParsedCommand& cmd) {
-    if (state_machine_.GetState() == State::ERROR) {
-        state_machine_.Reset();
+    if (m_stateMachine.GetState() == State::ERROR) {
+        m_stateMachine.Reset();
 
         // Reset all pins to unconfigured
         for (size_t i = 0; i < NUM_PINS; i++) {
-            pins_[i].mode = PinMode::UNCONFIGURED;
+            m_pins[i].mode = PinMode::UNCONFIGURED;
         }
 
         // Reset all motors
         for (size_t i = 0; i < NUM_MOTORS; i++) {
-            if (motors_[i].type != MotorType::UNCONFIGURED) {
-                CutterHal::EnableMotor(motors_[i].motor_index, false);
+            if (m_motors[i].type != MotorType::UNCONFIGURED) {
+                CutterHal::EnableMotor(m_motors[i].motor_index, false);
             }
-            memset(&motors_[i], 0, sizeof(MotorSlot));
-            motors_[i].type = MotorType::UNCONFIGURED;
-            motors_[i].motor_index = static_cast<uint8_t>(i);
+            memset(&m_motors[i], 0, sizeof(MotorSlot));
+            m_motors[i].type = MotorType::UNCONFIGURED;
+            m_motors[i].motor_index = static_cast<uint8_t>(i);
         }
 
-        response_.Ok();
+        m_response.Ok();
         if (cmd.has_seq) {
-            response_.Param("seq", cmd.seq);
+            m_response.Param("seq", cmd.seq);
         }
-        response_.Param("epoch", state_machine_.GetEpoch());
+        m_response.Param("epoch", m_stateMachine.GetEpoch());
     } else {
-        response_.Error(static_cast<uint32_t>(ErrorCode::INVALID_STATE),
+        m_response.Error(static_cast<uint32_t>(ErrorCode::INVALID_STATE),
                        "Not in error state");
         if (cmd.has_seq) {
-            response_.Param("seq", cmd.seq);
+            m_response.Param("seq", cmd.seq);
         }
     }
     SendResponse();
 }
 
 void Controller::CmdStatus(const ParsedCommand& cmd) {
-    response_.Ok();
+    m_response.Ok();
     if (cmd.has_seq) {
-        response_.Param("seq", cmd.seq);
+        m_response.Param("seq", cmd.seq);
     }
-    response_.Param("state", StateName(state_machine_.GetState()));
-    response_.Param("epoch", state_machine_.GetEpoch());
+    m_response.Param("state", StateName(m_stateMachine.GetState()));
+    m_response.Param("epoch", m_stateMachine.GetEpoch());
 
-    if (state_machine_.GetState() == State::ERROR) {
-        response_.Param("error_code", static_cast<uint32_t>(state_machine_.GetErrorCode()));
-        response_.Param("error_message", state_machine_.GetErrorMessage());
+    if (m_stateMachine.GetState() == State::ERROR) {
+        m_response.Param("error_code", static_cast<uint32_t>(m_stateMachine.GetErrorCode()));
+        m_response.Param("error_message", m_stateMachine.GetErrorMessage());
     }
     SendResponse();
 }
 
 void Controller::CmdVersion(const ParsedCommand& cmd) {
-    response_.Ok();
+    m_response.Ok();
     if (cmd.has_seq) {
-        response_.Param("seq", cmd.seq);
+        m_response.Param("seq", cmd.seq);
     }
-    response_.Param("version", CUTTER_VERSION);
-    response_.Param("protocol", PROTOCOL_VERSION);
+    m_response.Param("version", CUTTER_VERSION);
+    m_response.Param("protocol", PROTOCOL_VERSION);
     SendResponse();
 }
 
 void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
     // Stop all motors immediately
     for (size_t i = 0; i < NUM_MOTORS; i++) {
-        if (motors_[i].type != MotorType::UNCONFIGURED) {
-            CutterHal::StopMotor(motors_[i].motor_index, true);  // immediate stop
-            motors_[i].moving = false;
-            motors_[i].homing_state = HomingState::IDLE;
+        if (m_motors[i].type != MotorType::UNCONFIGURED) {
+            CutterHal::StopMotor(m_motors[i].motor_index, true);  // immediate stop
+            m_motors[i].moving = false;
+            m_motors[i].homing_state = HomingState::IDLE;
         }
     }
 
     // Enter error state
-    state_machine_.EnterError(ErrorCode::EMERGENCY_STOP, "Emergency stop");
+    m_stateMachine.EnterError(ErrorCode::EMERGENCY_STOP, "Emergency stop");
 
     // Send response
-    response_.Ok();
+    m_response.Ok();
     if (cmd.has_seq) {
-        response_.Param("seq", cmd.seq);
+        m_response.Param("seq", cmd.seq);
     }
-    response_.Param("epoch", state_machine_.GetEpoch());
+    m_response.Param("epoch", m_stateMachine.GetEpoch());
     SendResponse();
 
     // Send error event
-    response_.Event("error")
+    m_response.Event("error")
         .Param("code", static_cast<uint32_t>(ErrorCode::EMERGENCY_STOP))
         .Param("message", "Emergency stop activated");
     SendResponse();
 }
 
 void Controller::CmdGetNextSeq(const ParsedCommand& cmd) {
-    response_.Ok();
+    m_response.Ok();
     if (cmd.has_seq) {
-        response_.Param("seq", cmd.seq);
+        m_response.Param("seq", cmd.seq);
     }
-    response_.Param("next_seq", next_seq_);
+    m_response.Param("next_seq", m_nextSeq);
     SendResponse();
 }
 

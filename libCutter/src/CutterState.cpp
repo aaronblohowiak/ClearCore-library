@@ -22,21 +22,21 @@ const char* StateName(State s) {
 }
 
 StateMachine::StateMachine()
-    : state_(State::UNCONNECTED)
-    , epoch_(0)
-    , error_code_(ErrorCode::NONE)
+    : m_state(State::UNCONNECTED)
+    , m_epoch(0)
+    , m_errorCode(ErrorCode::NONE)
 {
-    error_message_[0] = '\0';
+    m_errorMessage[0] = '\0';
 }
 
 bool StateMachine::CanTransitionTo(State target) const {
     // From ERROR, only Reset() can change state
-    if (state_ == State::ERROR) {
+    if (m_state == State::ERROR) {
         return false;
     }
 
     // Valid transitions based on state diagram
-    switch (state_) {
+    switch (m_state) {
         case State::UNCONNECTED:
             return target == State::CONNECTED;
 
@@ -73,44 +73,44 @@ bool StateMachine::TransitionTo(State target) {
     if (!CanTransitionTo(target)) {
         return false;
     }
-    state_ = target;
+    m_state = target;
     return true;
 }
 
 void StateMachine::EnterError(ErrorCode code, const char* message) {
-    state_ = State::ERROR;
-    error_code_ = code;
-    epoch_++;
+    m_state = State::ERROR;
+    m_errorCode = code;
+    m_epoch++;
 
     if (message) {
-        strncpy(error_message_, message, sizeof(error_message_) - 1);
-        error_message_[sizeof(error_message_) - 1] = '\0';
+        strncpy(m_errorMessage, message, sizeof(m_errorMessage) - 1);
+        m_errorMessage[sizeof(m_errorMessage) - 1] = '\0';
     } else {
-        error_message_[0] = '\0';
+        m_errorMessage[0] = '\0';
     }
 }
 
 bool StateMachine::Reset() {
-    if (state_ != State::ERROR) {
+    if (m_state != State::ERROR) {
         return false;
     }
 
-    state_ = State::CONNECTED;
-    error_code_ = ErrorCode::NONE;
-    error_message_[0] = '\0';
+    m_state = State::CONNECTED;
+    m_errorCode = ErrorCode::NONE;
+    m_errorMessage[0] = '\0';
     return true;
 }
 
 void StateMachine::MarkConnected() {
-    if (state_ == State::UNCONNECTED) {
-        state_ = State::CONNECTED;
+    if (m_state == State::UNCONNECTED) {
+        m_state = State::CONNECTED;
     }
 }
 
 void StateMachine::MarkDisconnected() {
     // Can disconnect from any state except ERROR
-    if (state_ != State::ERROR) {
-        state_ = State::UNCONNECTED;
+    if (m_state != State::ERROR) {
+        m_state = State::UNCONNECTED;
     }
 }
 

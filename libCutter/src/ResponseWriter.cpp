@@ -10,48 +10,48 @@
 namespace Cutter {
 
 ResponseWriter::ResponseWriter(char* buffer, size_t buffer_size)
-    : buffer_(buffer)
-    , buffer_size_(buffer_size)
-    , pos_(0)
-    , overflowed_(false)
-    , finished_(false)
+    : m_buffer(buffer)
+    , m_bufferSize(buffer_size)
+    , m_pos(0)
+    , m_overflowed(false)
+    , m_finished(false)
 {
-    if (buffer_size_ > 0) {
-        buffer_[0] = '\0';
+    if (m_bufferSize > 0) {
+        m_buffer[0] = '\0';
     }
 }
 
 void ResponseWriter::Reset() {
-    pos_ = 0;
-    overflowed_ = false;
-    finished_ = false;
-    if (buffer_size_ > 0) {
-        buffer_[0] = '\0';
+    m_pos = 0;
+    m_overflowed = false;
+    m_finished = false;
+    if (m_bufferSize > 0) {
+        m_buffer[0] = '\0';
     }
 }
 
 void ResponseWriter::Append(const char* str) {
-    if (overflowed_ || !str) return;
+    if (m_overflowed || !str) return;
 
     while (*str) {
-        if (pos_ < buffer_size_ - 1) {
-            buffer_[pos_++] = *str++;
+        if (m_pos < m_bufferSize - 1) {
+            m_buffer[m_pos++] = *str++;
         } else {
-            overflowed_ = true;
+            m_overflowed = true;
             break;
         }
     }
-    buffer_[pos_] = '\0';
+    m_buffer[m_pos] = '\0';
 }
 
 void ResponseWriter::AppendChar(char c) {
-    if (overflowed_) return;
+    if (m_overflowed) return;
 
-    if (pos_ < buffer_size_ - 1) {
-        buffer_[pos_++] = c;
-        buffer_[pos_] = '\0';
+    if (m_pos < m_bufferSize - 1) {
+        m_buffer[m_pos++] = c;
+        m_buffer[m_pos] = '\0';
     } else {
-        overflowed_ = true;
+        m_overflowed = true;
     }
 }
 
@@ -148,11 +148,11 @@ ResponseWriter& ResponseWriter::Param(const char* key, bool value) {
 }
 
 const char* ResponseWriter::Finish() {
-    if (!finished_) {
+    if (!m_finished) {
         AppendChar('\n');
-        finished_ = true;
+        m_finished = true;
     }
-    return buffer_;
+    return m_buffer;
 }
 
 }  // namespace Cutter
