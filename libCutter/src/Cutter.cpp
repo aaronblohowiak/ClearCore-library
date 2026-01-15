@@ -268,23 +268,6 @@ void Controller::CheckPins() {
                     }
                 }
 
-                // Check stop thresholds (stop motors but don't enter error)
-                if (pin.analog_in.stop_threshold_enabled) {
-                    if (val < pin.analog_in.stop_threshold_low || val > pin.analog_in.stop_threshold_high) {
-                        // Stop all motors
-                        for (size_t j = 0; j < NUM_MOTORS; j++) {
-                            if (motors_[j].type != MotorType::UNCONFIGURED && motors_[j].moving) {
-                                CutterHal::StopMotor(motors_[j].motor_index, false);
-                                motors_[j].moving = false;
-                            }
-                        }
-                        response_.Event("threshold_stop")
-                            .Param("pin", static_cast<int32_t>(pin.pin_index))
-                            .Param("value", static_cast<int32_t>(val));
-                        SendResponse();
-                    }
-                }
-
                 // Periodic reporting
                 if (pin.analog_in.report_interval_ms > 0) {
                     if ((now - pin.analog_in.last_report_time) >= pin.analog_in.report_interval_ms) {
@@ -296,21 +279,6 @@ void Controller::CheckPins() {
                     }
                 }
 
-                // Threshold crossing reporting
-                if (pin.analog_in.report_threshold_cross) {
-                    bool was_in_range = (pin.analog_in.last_value >= pin.analog_in.stop_threshold_low &&
-                                        pin.analog_in.last_value <= pin.analog_in.stop_threshold_high);
-                    bool is_in_range = (val >= pin.analog_in.stop_threshold_low &&
-                                       val <= pin.analog_in.stop_threshold_high);
-
-                    if (was_in_range != is_in_range) {
-                        response_.Event("threshold")
-                            .Param("pin", static_cast<int32_t>(pin.pin_index))
-                            .Param("value", static_cast<int32_t>(val))
-                            .Param("in_range", is_in_range);
-                        SendResponse();
-                    }
-                }
                 pin.analog_in.last_value = val;
                 break;
             }

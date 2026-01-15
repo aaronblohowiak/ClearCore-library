@@ -397,34 +397,6 @@ TEST_F(PinTest, AnalogErrorThresholdInRange) {
     EXPECT_NE(ctrl->GetState(), State::ERROR);
 }
 
-// === Analog Stop Thresholds ===
-
-TEST_F(PinTest, AnalogStopThreshold) {
-    // Configure motor first
-    serial.SendLine("configure_stepper motor=0");
-    ctrl->Update();
-    serial.SendLine("configure_endstop pin=6");
-    ctrl->Update();
-    serial.SendLine("enable motor=0");
-    ctrl->Update();
-    serial.SendLine("move motor=0 steps=10000");
-    ctrl->Update();
-    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
-
-    // Configure analog with stop threshold
-    serial.SendLine("configure_analog_in pin=9 stop_low=100 stop_high=4000");
-    ctrl->Update();
-    serial.ClearOutput();
-
-    // Value below stop_low - should stop motors but NOT enter error
-    SET_ANALOG(9, 50);
-    ctrl->Update();
-
-    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
-    EXPECT_TRUE(serial.HasEvent("threshold_stop"));
-    EXPECT_NE(ctrl->GetState(), State::ERROR);  // Not an error, just stopped
-}
-
 // === Analog Periodic Reporting ===
 
 TEST_F(PinTest, AnalogPeriodicReporting) {

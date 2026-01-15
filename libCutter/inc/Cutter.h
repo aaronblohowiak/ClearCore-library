@@ -100,14 +100,9 @@ struct AnalogInState {
     int16_t error_threshold_low;
     int16_t error_threshold_high;
     bool error_threshold_enabled;
-    // Stop thresholds - stop motors if crossed
-    int16_t stop_threshold_low;
-    int16_t stop_threshold_high;
-    bool stop_threshold_enabled;
     // Reporting
     uint32_t report_interval_ms;    // 0=disabled, else ms between reports
     uint32_t last_report_time;
-    bool report_threshold_cross;    // Report when crossing thresholds
 };
 
 /**

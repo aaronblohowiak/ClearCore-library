@@ -110,14 +110,8 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
     slot->analog_in.error_threshold_low = static_cast<int16_t>(cmd.GetIntOr("error_low", INT16_MIN));
     slot->analog_in.error_threshold_high = static_cast<int16_t>(cmd.GetIntOr("error_high", INT16_MAX));
 
-    // Stop thresholds (stop motors if outside range)
-    slot->analog_in.stop_threshold_enabled = cmd.HasParam("stop_low") || cmd.HasParam("stop_high");
-    slot->analog_in.stop_threshold_low = static_cast<int16_t>(cmd.GetIntOr("stop_low", INT16_MIN));
-    slot->analog_in.stop_threshold_high = static_cast<int16_t>(cmd.GetIntOr("stop_high", INT16_MAX));
-
     // Reporting
     slot->analog_in.report_interval_ms = static_cast<uint32_t>(cmd.GetIntOr("report_interval", 0));
-    slot->analog_in.report_threshold_cross = cmd.GetBoolOr("report_threshold", false);
 
     slot->analog_in.last_value = CutterHal::ReadAnalogPin(slot->pin_index);
     slot->analog_in.last_report_time = CutterHal::Milliseconds();
