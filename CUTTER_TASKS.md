@@ -91,7 +91,7 @@
     - `DigitalOutState` (max_raised_ms, on_error, current_value, raised_at_ms)
     - `AnalogInState` (thresholds, report_interval, last_value, etc.)
     - `PwmState` (stop_on_error, duty, frequency)
-    - `HBridgeState` (stop_on_error, value, tone state)
+    - `HBridgeState` (stop_on_error, value, tone_amplitude, tone_frequency, tone state)
     - `EndStopState` (motor_index, direction, active_low, is_triggered)
   - `PinSlot` struct with mode + pin_index + union of above
   - Method declarations: `Check()`, `ApplyErrorState()`, `Read()`, `Write()`
@@ -110,7 +110,7 @@
   - `configure_digital_in pin=N [error_trigger=V] [invert=0] [report_changes=0]`
   - `configure_digital_out pin=N [max_raised_ms=0] [on_error=-1]`
   - `configure_analog_in pin=N [error_low=INT16_MIN] [error_high=INT16_MAX] [stop_low=INT16_MIN] [stop_high=INT16_MAX] [report_interval_ms=0] [report_threshold=0]`
-  - `configure_pwm pin=N [stop_on_error=1] [amplitude=INT16_MAX]`
+  - `configure_pwm pin=N [stop_on_error=1]`
   - `configure_hbridge pin=N [stop_on_error=1]`
   - Validate pin capabilities for each mode
 

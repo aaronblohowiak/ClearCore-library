@@ -211,15 +211,16 @@ struct AnalogInState {
 
 struct PwmState {
     bool stop_on_error;
-    int16_t amplitude;               // Scaling factor (default INT16_MAX)
-    uint16_t duty;                   // Current duty cycle
+    uint16_t duty;                   // Current duty cycle (0-65535)
     uint32_t frequency;
 };
 
 struct HBridgeState {
     bool stop_on_error;
-    int16_t value;                   // -100 to 100 or raw
+    int16_t value;                   // -32767 to +32767 (bidirectional)
     // Tone state
+    int16_t tone_amplitude;          // Amplitude for tone generation (0 to INT16_MAX)
+    uint16_t tone_frequency;         // Current tone frequency (Hz)
     bool tone_active;
     uint32_t tone_end_ms;            // 0 = no auto-stop
 };
@@ -1038,8 +1039,8 @@ ClearCore has 256KB SRAM, so this is well within budget.
 - `DigitalInState`: 5 bytes
 - `DigitalOutState`: 10 bytes
 - `AnalogInState`: 21 bytes (largest)
-- `PwmState`: 9 bytes
-- `HBridgeState`: 9 bytes
+- `PwmState`: 7 bytes
+- `HBridgeState`: 12 bytes
 - `EndStopState`: 5 bytes
 
 Each `PinSlot` = 2 bytes (mode + pin_index) + 21 bytes (union) + padding ≈ 32 bytes
