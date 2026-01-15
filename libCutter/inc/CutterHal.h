@@ -196,6 +196,17 @@ bool IsMotorReady(uint8_t motor);
 bool IsMotorInFault(uint8_t motor);
 
 /**
+    \brief Check if motor has alerts present (ClearPath)
+
+    Motion will be prevented if any Alert Register bits are set.
+    Should be false for move to be considered complete.
+
+    \param[in] motor Motor index (0-3)
+    \return true if motor has alerts (not ready for moves)
+**/
+bool HasMotorAlerts(uint8_t motor);
+
+/**
     \brief Check if digital output pin is in hardware fault (overcurrent)
 
     \param[in] pin Pin index (0-5 for outputs)

@@ -174,6 +174,15 @@ bool IsMotorInFault(uint8_t motor) {
     return false;
 }
 
+bool HasMotorAlerts(uint8_t motor) {
+    if (motor < 4) {
+        // Alerts present if motion was canceled by limit switch
+        return g_fake.motion_canceled_neg_limit[motor] ||
+               g_fake.motion_canceled_pos_limit[motor];
+    }
+    return false;
+}
+
 bool IsPinInFault(uint8_t pin) {
     if (pin < 6) {
         return g_fake.pin_fault[pin];

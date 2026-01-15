@@ -462,13 +462,14 @@ void Controller::CheckMotors() {
         }
 
         // Check for move completion
-        // For SDSK/ClearPath: steps must be complete AND HLFB must be asserted (motor in position)
+        // For SDSK/ClearPath: steps complete AND HLFB asserted AND no alerts
         // For generic steppers: just steps complete (open-loop, no position feedback)
         if (motor.moving && CutterHal::StepsComplete(motor.motor_index)) {
             bool move_complete = true;
             if (motor.type == MotorType::CLEARPATH) {
-                // SDSK needs HLFB asserted to confirm motor actually reached position
-                move_complete = (CutterHal::GetHlfbState(motor.motor_index) == CutterHal::HLFB_ASSERTED);
+                // SDSK needs HLFB asserted AND no alerts to confirm move truly complete
+                move_complete = (CutterHal::GetHlfbState(motor.motor_index) == CutterHal::HLFB_ASSERTED) &&
+                               !CutterHal::HasMotorAlerts(motor.motor_index);
             }
 
             if (move_complete) {

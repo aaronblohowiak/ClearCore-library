@@ -216,6 +216,14 @@ bool IsMotorInFault(uint8_t motor) {
     return false;
 }
 
+bool HasMotorAlerts(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->StatusReg().bit.AlertsPresent;
+    }
+    return false;
+}
+
 bool IsPinInFault(uint8_t pin) {
     // Only IO-0 to IO-5 have overcurrent detection
     if (pin <= 5) {
