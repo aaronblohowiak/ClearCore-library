@@ -80,14 +80,21 @@ enum class MotorType : uint8_t {
 };
 
 /**
-    \brief Homing state for generic steppers
+    \brief Homing state machine states
+
+    Used for both generic steppers (endstop homing) and SDSK motors (hard-stop homing).
+
+    Stepper homing sequence: IDLE -> SEEKING -> BACKING_OFF -> LATCHING -> COMPLETE
+    SDSK homing sequence: IDLE -> SDSK_SEEKING -> SDSK_CONFIRMED -> COMPLETE
 **/
 enum class HomingState : uint8_t {
-    IDLE = 0,
-    SEEKING,
-    BACKING_OFF,
-    LATCHING,
-    COMPLETE,
+    IDLE = 0,           ///< Not homing
+    SEEKING,            ///< Stepper: moving toward endstop at seek velocity
+    BACKING_OFF,        ///< Stepper: backing away from endstop
+    LATCHING,           ///< Stepper: slow approach for precise contact
+    SDSK_SEEKING,       ///< SDSK: moving toward hard stop, monitoring HLFB
+    SDSK_CONFIRMED,     ///< SDSK: hard stop detected, setting position
+    COMPLETE,           ///< Homing complete, position set to zero
 };
 
 /**
@@ -146,7 +153,7 @@ struct HBridgeState {
     \brief End stop runtime state (digital input used for homing)
 **/
 struct EndStopState {
-    bool active_high;
+    uint8_t triggered_value;  ///< 0 = triggered when LOW (NC, fail-safe), 1 = triggered when HIGH (NO)
     bool last_value;
 };
 
@@ -168,13 +175,28 @@ struct PinSlot {
 
 /**
     \brief Motor slot containing configuration and runtime state
+
+    \par Homing Strategy
+    Motors are enabled and homed sequentially by enable_priority (lower = first).
+    - Generic steppers: Use endstop homing (seek -> backoff -> latch sequence)
+    - SDSK/ClearPath: Use HLFB hard-stop homing (move into mechanical stop, detect via torque)
+
+    \par Fail-Safe Endstops
+    For generic steppers, end_stop_triggered defaults to 0, meaning the endstop
+    is triggered when the pin reads LOW. This assumes normally-closed (NC) switches
+    which fail safe: a broken wire reads the same as a triggered switch.
 **/
 struct MotorSlot {
     MotorType type;
     uint8_t motor_index;
     bool enabled;
     bool moving;
-    uint32_t move_seq;  ///< Sequence number of current move
+    uint32_t move_seq;          ///< Sequence number of current move
+
+    // Common enable/homing configuration
+    uint8_t enable_priority;    ///< Enable/home order (lower = earlier, default = motor index)
+    bool home_on_enable;        ///< Automatically home when enabled via enable_all
+    bool homed;                 ///< Motor has been homed since last enable
 
     // Motion parameters
     int32_t vel_max;
@@ -185,19 +207,24 @@ struct MotorSlot {
     int32_t soft_limit_min;
     int32_t soft_limit_max;
 
-    // Homing (generic stepper only)
+    // Homing state (both motor types)
     HomingState homing_state;
-    uint8_t end_stop_pin;
-    bool end_stop_active_high;
-    int32_t homing_seek_velocity;
-    int32_t homing_latch_velocity;
-    int32_t homing_backoff_distance;
 
-    // ClearPath (SDSK) specific
-    uint8_t enable_priority;    ///< Enable order (lower = earlier)
-    uint8_t last_hlfb_state;    ///< For detecting HLFB changes
-    uint32_t enable_start_time;
-    uint32_t hlfb_timeout_ms;
+    // Generic stepper homing (endstop-based)
+    uint8_t end_stop_pin;           ///< Pin configured as END_STOP for this motor
+    uint8_t end_stop_triggered;     ///< 0 = triggered when LOW (NC default), 1 = triggered when HIGH (NO)
+    int32_t homing_seek_velocity;   ///< Fast approach velocity (steps/sec, negative = toward endstop)
+    int32_t homing_latch_velocity;  ///< Slow precision velocity (steps/sec)
+    int32_t homing_backoff_distance;///< Distance to back off after first contact (steps)
+
+    // SDSK/ClearPath homing (hard-stop based)
+    int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
+    int32_t homing_torque_limit;    ///< HLFB torque % that indicates hard stop (0 = use default)
+
+    // SDSK/ClearPath runtime state
+    uint8_t last_hlfb_state;        ///< For detecting HLFB changes
+    uint32_t enable_start_time;     ///< When motor was enabled (for HLFB timeout)
+    uint32_t hlfb_timeout_ms;       ///< Max time to wait for HLFB after enable
 };
 
 /**
@@ -347,6 +374,25 @@ public:
     **/
     StateMachine& GetStateMachine() { return m_stateMachine; }
 
+    /**
+        \brief Set enable_all sequence number for completion event
+
+        \param[in] seq Sequence number from enable_all command
+    **/
+    void SetEnableAllSeq(uint32_t seq);
+
+    /**
+        \brief Check if enable_all sequence is in progress
+
+        \return true if enable_all is active and homing motors
+    **/
+    bool IsEnableAllActive() const { return m_enableAllActive; }
+
+    /**
+        \brief Start homing the next motor in priority order
+    **/
+    void StartNextHoming();
+
 private:
     // Serial communication
     ISerial* m_serial;
@@ -378,6 +424,13 @@ private:
 
     // Sequence tracking
     uint32_t m_nextSeq;
+
+    // Enable-all state (sequential enable and homing)
+    bool m_enableAllActive;         ///< enable_all command in progress
+    uint32_t m_enableAllSeq;        ///< Sequence number for enable_all completion event
+    uint8_t m_homingOrder[NUM_MOTORS];  ///< Motor indices sorted by enable_priority
+    uint8_t m_homingCount;          ///< Number of motors to home
+    uint8_t m_currentHomingIndex;   ///< Index into m_homingOrder for current motor
 
     // Built-in commands
     void CmdPing(const ParsedCommand& cmd);

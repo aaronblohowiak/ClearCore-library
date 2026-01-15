@@ -19,11 +19,13 @@ protected:
         RESET_HAL();
         ctrl = new Controller(&serial);
         // Connect and configure stepper
+        // Note: end_stop_triggered=1 means triggered when HIGH (NO switch)
+        // Default is 0 (triggered when LOW, NC switch, fail-safe)
         serial.SendLine("ping");
         ctrl->Update();
-        serial.SendLine("configure_stepper motor=0 end_stop_pin=6 homing_seek_velocity=5000 homing_latch_velocity=500 homing_backoff=200");
+        serial.SendLine("configure_stepper motor=0 end_stop_pin=6 end_stop_triggered=1 homing_seek_velocity=5000 homing_latch_velocity=500 homing_backoff=200");
         ctrl->Update();
-        serial.SendLine("configure_endstop pin=6 active_high=1");
+        serial.SendLine("configure_endstop pin=6 triggered=1");
         ctrl->Update();
         serial.SendLine("enable motor=0");
         ctrl->Update();
@@ -47,17 +49,22 @@ TEST_F(HomingTest, HomeCommand) {
     EXPECT_EQ(ctrl->GetState(), State::WORKING);
 }
 
-TEST_F(HomingTest, HomeOnlyStepper) {
-    // Configure as ClearPath
+TEST_F(HomingTest, SdskHomesWithHlfb) {
+    // Configure as ClearPath (SDSK)
     serial.SendLine("configure_sdsk motor=1");
+    ctrl->Update();
+    SET_HLFB(1, 1);  // HLFB_ASSERTED - motor ready
+    serial.SendLine("enable motor=1");
     ctrl->Update();
     serial.ClearOutput();
 
     serial.SendLine("home motor=1");
     ctrl->Update();
 
-    EXPECT_TRUE(serial.HasOutput("error"));
-    EXPECT_TRUE(serial.HasOutput("Only generic steppers"));
+    // SDSK motors use SDSK_SEEKING state (hard-stop homing via HLFB)
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_EQ(ctrl->GetMotor(1)->homing_state, HomingState::SDSK_SEEKING);
+    EXPECT_TRUE(ctrl->GetMotor(1)->moving);
 }
 
 TEST_F(HomingTest, HomeRequiresEnabled) {
@@ -114,20 +121,21 @@ TEST_F(HomingTest, HomingSequenceComplete) {
     EXPECT_EQ(ctrl->GetState(), State::READY);
 }
 
-// === Homing with Active Low Endstop ===
+// === Homing with NC Endstop (triggered when LOW) ===
 
-TEST_F(HomingTest, HomingActiveLow) {
-    // Reconfigure with active_low
-    serial.SendLine("configure_stepper motor=0 end_stop_pin=6 end_stop_active_high=0");
+TEST_F(HomingTest, HomingTriggeredLow) {
+    // Reconfigure with triggered=0 (NC switch, fail-safe default)
+    // triggered=0 means endstop is triggered when pin reads LOW
+    serial.SendLine("configure_stepper motor=0 end_stop_pin=6 end_stop_triggered=0");
     ctrl->Update();
-    serial.SendLine("configure_endstop pin=6 active_high=0");
+    serial.SendLine("configure_endstop pin=6 triggered=0");
     ctrl->Update();
     // Re-enable motor after reconfiguring (memset resets enabled flag)
     serial.SendLine("enable motor=0");
     ctrl->Update();
     serial.ClearOutput();
 
-    // Endstop starts high (not triggered since active_low)
+    // Endstop starts high (not triggered since triggered=0 means LOW triggers)
     SET_PIN(6, true);
     serial.SendLine("home motor=0");
     ctrl->Update();

@@ -14,6 +14,11 @@ Controller::Controller(ISerial* serial)
     , m_responseBuffer{}
     , m_response(m_responseBuffer, sizeof(m_responseBuffer))
     , m_nextSeq(1)
+    , m_enableAllActive(false)
+    , m_enableAllSeq(0)
+    , m_homingOrder{}
+    , m_homingCount(0)
+    , m_currentHomingIndex(0)
 {
     // Initialize input buffer
     m_inputBuffer[0] = '\0';
@@ -348,10 +353,10 @@ void Controller::CheckMotors() {
         if (m_stateMachine.GetState() == State::ENABLING && motor.enabled) {
             if (motor.type == MotorType::CLEARPATH) {
                 if (CutterHal::IsMotorReady(motor.motor_index)) {
-                    // Motor is ready - transition to READY if all motors ready
+                    // Motor is ready - check if all motors ready
                     bool all_ready = true;
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
-                        if (m_motors[j].type != MotorType::UNCONFIGURED &&
+                        if (m_motors[j].type == MotorType::CLEARPATH &&
                             m_motors[j].enabled &&
                             !CutterHal::IsMotorReady(m_motors[j].motor_index)) {
                             all_ready = false;
@@ -359,7 +364,13 @@ void Controller::CheckMotors() {
                         }
                     }
                     if (all_ready) {
+                        // All SDSK motors ready - transition to READY
                         m_stateMachine.TransitionTo(State::READY);
+
+                        // If enable_all is active, start sequential homing
+                        if (m_enableAllActive) {
+                            StartNextHoming();
+                        }
                     }
                 } else if ((now - motor.enable_start_time) > motor.hlfb_timeout_ms) {
                     // HLFB timeout
@@ -369,6 +380,24 @@ void Controller::CheckMotors() {
                         .Param("code", static_cast<uint32_t>(ErrorCode::HLFB_TIMEOUT))
                         .Param("motor", static_cast<int32_t>(motor.motor_index));
                     SendResponse();
+                    m_enableAllActive = false;  // Cancel enable_all on error
+                }
+            } else if (motor.type == MotorType::GENERIC_STEPPER) {
+                // Generic steppers don't have HLFB - check if all SDSK motors ready
+                bool all_sdsk_ready = true;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].type == MotorType::CLEARPATH &&
+                        m_motors[j].enabled &&
+                        !CutterHal::IsMotorReady(m_motors[j].motor_index)) {
+                        all_sdsk_ready = false;
+                        break;
+                    }
+                }
+                if (all_sdsk_ready) {
+                    m_stateMachine.TransitionTo(State::READY);
+                    if (m_enableAllActive) {
+                        StartNextHoming();
+                    }
                 }
             }
         }
@@ -395,13 +424,21 @@ void Controller::CheckMotors() {
             }
         }
 
-        // Check homing state for generic steppers
-        if (motor.type == MotorType::GENERIC_STEPPER &&
-            motor.homing_state != HomingState::IDLE &&
+        // Check homing state for both motor types
+        if (motor.homing_state != HomingState::IDLE &&
             motor.homing_state != HomingState::COMPLETE) {
             // Homing logic handled in MotorCommands.cpp
             extern void CheckHomingState(Controller* ctrl, MotorSlot& motor);
+            HomingState prev_state = motor.homing_state;
             CheckHomingState(this, motor);
+
+            // If homing just completed and enable_all is active, start next motor
+            if (prev_state != HomingState::COMPLETE &&
+                motor.homing_state == HomingState::COMPLETE &&
+                m_enableAllActive) {
+                m_currentHomingIndex++;
+                StartNextHoming();
+            }
         }
     }
 }
@@ -435,6 +472,85 @@ MotorSlot* Controller::GetMotor(uint8_t index) {
 const MotorSlot* Controller::GetMotor(uint8_t index) const {
     if (index >= NUM_MOTORS) return nullptr;
     return &m_motors[index];
+}
+
+void Controller::SetEnableAllSeq(uint32_t seq) {
+    m_enableAllSeq = seq;
+    m_enableAllActive = true;
+    m_currentHomingIndex = 0;
+    m_homingCount = 0;
+
+    // Build sorted list of motors to home by priority
+    struct MotorPriority {
+        uint8_t index;
+        uint8_t priority;
+    };
+    MotorPriority motors[NUM_MOTORS];
+    size_t count = 0;
+
+    for (size_t i = 0; i < NUM_MOTORS; i++) {
+        MotorSlot& slot = m_motors[i];
+        if (slot.type != MotorType::UNCONFIGURED && slot.home_on_enable) {
+            motors[count].index = static_cast<uint8_t>(i);
+            motors[count].priority = slot.enable_priority;
+            count++;
+        }
+    }
+
+    // Simple bubble sort by priority
+    for (size_t i = 0; i + 1 < count; i++) {
+        for (size_t j = 0; j < count - i - 1; j++) {
+            if (motors[j].priority > motors[j + 1].priority) {
+                MotorPriority tmp = motors[j];
+                motors[j] = motors[j + 1];
+                motors[j + 1] = tmp;
+            }
+        }
+    }
+
+    // Store sorted order
+    for (size_t i = 0; i < count; i++) {
+        m_homingOrder[i] = motors[i].index;
+    }
+    m_homingCount = static_cast<uint8_t>(count);
+}
+
+void Controller::StartNextHoming() {
+    // Forward declaration of StartHoming from MotorCommands.cpp
+    extern void StartHoming(MotorSlot* slot, uint32_t seq);
+
+    while (m_currentHomingIndex < m_homingCount) {
+        uint8_t motor_idx = m_homingOrder[m_currentHomingIndex];
+        MotorSlot* slot = &m_motors[motor_idx];
+
+        // Skip if already homed or not enabled
+        if (slot->homed || !slot->enabled) {
+            m_currentHomingIndex++;
+            continue;
+        }
+
+        // Start homing this motor
+        StartHoming(slot, m_enableAllSeq);
+
+        // Transition to WORKING if needed
+        if (m_stateMachine.GetState() == State::READY) {
+            m_stateMachine.TransitionTo(State::WORKING);
+        }
+
+        m_response.Event("homing_started")
+            .Param("motor", static_cast<int32_t>(motor_idx))
+            .Param("seq", m_enableAllSeq);
+        SendResponse();
+
+        return;  // Wait for this motor to finish homing
+    }
+
+    // All motors homed - emit completion event
+    m_enableAllActive = false;
+    m_response.Event("all_homed")
+        .Param("seq", m_enableAllSeq)
+        .Param("count", static_cast<int32_t>(m_homingCount));
+    SendResponse();
 }
 
 // Built-in commands

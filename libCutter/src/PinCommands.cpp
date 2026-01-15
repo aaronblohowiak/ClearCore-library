@@ -195,7 +195,9 @@ static void CmdConfigureEndstop(Controller* ctrl, const ParsedCommand& cmd) {
 
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::END_STOP;
-    slot->end_stop.active_high = cmd.GetBoolOr("active_high", true);
+    // triggered=0 means triggered when LOW (NC switch, fail-safe default)
+    // triggered=1 means triggered when HIGH (NO switch)
+    slot->end_stop.triggered_value = static_cast<uint8_t>(cmd.GetIntOr("triggered", 0));
     slot->end_stop.last_value = CutterHal::ReadDigitalPin(slot->pin_index);
 
     ctrl->Response().Ok();
