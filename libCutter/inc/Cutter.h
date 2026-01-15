@@ -185,12 +185,20 @@ struct PinSlot {
     For generic steppers, end_stop_triggered defaults to 0, meaning the endstop
     is triggered when the pin reads LOW. This assumes normally-closed (NC) switches
     which fail safe: a broken wire reads the same as a triggered switch.
+
+    \par Soft Limits for Velocity Moves
+    When soft_limits_enabled is true, velocity moves (move_velocity command) are
+    monitored during execution. If the motor position exceeds the soft limit range,
+    the motor is stopped immediately and a "soft_limit" event is emitted with the
+    motor index, sequence number, and final position. Position moves validate the
+    target upfront and reject moves outside the range.
 **/
 struct MotorSlot {
     MotorType type;
     uint8_t motor_index;
     bool enabled;
     bool moving;
+    bool velocity_move;         ///< True if current move is velocity (not position)
     uint32_t move_seq;          ///< Sequence number of current move
 
     // Common enable/homing configuration

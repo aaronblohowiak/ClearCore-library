@@ -244,6 +244,88 @@ TEST_F(MotorTest, SoftLimitsAllow) {
     EXPECT_TRUE(serial.HasOutput("ok"));
 }
 
+TEST_F(MotorTest, VelocityMoveSoftLimitMax) {
+    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=1000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Start velocity move toward max limit
+    serial.SendLine("move_velocity seq=50 motor=0 velocity=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_EQ(ctrl->GetState(), State::WORKING);
+    serial.ClearOutput();
+
+    // Simulate motor exceeding soft limit (strict inequality: must go past)
+    g_fake.motor_position[0] = 1001;
+    ctrl->Update();
+
+    // Should emit soft_limit event and stop
+    EXPECT_TRUE(serial.HasEvent("soft_limit"));
+    EXPECT_TRUE(serial.HasOutput("motor=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=50"));
+    EXPECT_TRUE(serial.HasOutput("position=1001"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+TEST_F(MotorTest, VelocityMoveSoftLimitMin) {
+    // Configure with range 0-10000, position starts at 5000
+    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=10000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.SendLine("set_position motor=0 position=5000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Start velocity move toward min limit (negative velocity)
+    serial.SendLine("move_velocity seq=51 motor=0 velocity=-1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Simulate motor exceeding soft limit min (strict inequality: must go past)
+    g_fake.motor_position[0] = -1;
+    ctrl->Update();
+
+    // Should emit soft_limit event and stop
+    EXPECT_TRUE(serial.HasEvent("soft_limit"));
+    EXPECT_TRUE(serial.HasOutput("seq=51"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, VelocityMoveNoSoftLimitWhenDisabled) {
+    // Configure without soft limits
+    serial.SendLine("configure_stepper motor=0");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Start velocity move
+    serial.SendLine("move_velocity motor=0 velocity=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Motor goes to large position - no soft limit triggered
+    g_fake.motor_position[0] = 100000;
+    ctrl->Update();
+
+    // Should NOT emit soft_limit event (soft limits disabled)
+    EXPECT_FALSE(serial.HasEvent("soft_limit"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+}
+
 // === State Validation ===
 
 TEST_F(MotorTest, MoveRequiresReady) {

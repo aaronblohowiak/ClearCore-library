@@ -402,6 +402,38 @@ void Controller::CheckMotors() {
             }
         }
 
+        // Check soft limits for velocity moves
+        if (motor.moving && motor.velocity_move && motor.soft_limits_enabled) {
+            int32_t pos = CutterHal::GetMotorPosition(motor.motor_index);
+            bool at_limit = false;
+            // Use strict inequality so starting at boundary is allowed
+            if (pos < motor.soft_limit_min || pos > motor.soft_limit_max) {
+                at_limit = true;
+            }
+            if (at_limit) {
+                CutterHal::StopMotor(motor.motor_index, true);
+                motor.moving = false;
+                m_response.Event("soft_limit")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("seq", motor.move_seq)
+                    .Param("position", pos);
+                SendResponse();
+
+                // Transition back to READY if no other motors moving
+                bool any_moving = false;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].moving) {
+                        any_moving = true;
+                        break;
+                    }
+                }
+                if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                    m_stateMachine.TransitionTo(State::READY);
+                }
+                continue;  // Skip move completion check since we stopped it
+            }
+        }
+
         // Check for move completion
         if (motor.moving && CutterHal::StepsComplete(motor.motor_index)) {
             motor.moving = false;

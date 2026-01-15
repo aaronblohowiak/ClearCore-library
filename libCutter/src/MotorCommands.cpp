@@ -274,6 +274,7 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetMotorParams(slot->motor_index, vel, accel);
 
     slot->moving = true;
+    slot->velocity_move = false;
     slot->move_seq = cmd.seq;
 
     if (is_relative) {
@@ -335,6 +336,7 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, accel);
 
     slot->moving = true;
+    slot->velocity_move = true;
     slot->move_seq = cmd.seq;
     CutterHal::MoveVelocity(slot->motor_index, velocity);
 
