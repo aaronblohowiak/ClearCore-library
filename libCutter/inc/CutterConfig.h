@@ -1,6 +1,6 @@
 /**
- * @file CutterConfig.h
- * @brief Compile-time configuration constants for Cutter
+ * \file CutterConfig.h
+ * \brief Compile-time configuration constants for Cutter
  *
  * All buffer sizes, limits, and pin capability tables are defined here.
  * No dynamic allocation - everything uses fixed-size arrays.
@@ -42,7 +42,7 @@ constexpr size_t NUM_MOTORS = 4;
 // Each pin has specific capabilities based on ClearCore hardware
 
 /**
- * @brief Pin capability flags
+ * \brief Pin capability flags
  */
 enum class PinCap : uint8_t {
     NONE        = 0,
@@ -63,7 +63,7 @@ constexpr bool operator&(PinCap caps, PinCap flag) {
 }
 
 /**
- * @brief Pin capability table
+ * \brief Pin capability table
  *
  * Index by pin number to get capabilities.
  * Pin 0-3: Digital I/O + PWM
@@ -95,10 +95,10 @@ constexpr PinCap PIN_CAPABILITIES[NUM_PINS] = {
 };
 
 /**
- * @brief Check if a pin supports a capability
- * @param pin Pin index (0-12)
- * @param cap Capability to check
- * @return true if pin supports the capability
+ * \brief Check if a pin supports a capability
+ * \param pin Pin index (0-12)
+ * \param cap Capability to check
+ * \return true if pin supports the capability
  */
 inline bool PinSupports(uint8_t pin, PinCap cap) {
     if (pin >= NUM_PINS) return false;
