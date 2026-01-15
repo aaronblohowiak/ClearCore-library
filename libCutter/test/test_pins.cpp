@@ -251,3 +251,194 @@ TEST_F(PinTest, DigitalInputChangeEvent) {
     EXPECT_TRUE(serial.HasOutput("pin=6"));
     EXPECT_TRUE(serial.HasOutput("value=1"));
 }
+
+// === Digital Input Invert ===
+
+TEST_F(PinTest, DigitalInputInvert) {
+    serial.SendLine("configure_digital_in pin=6 invert=1");
+    ctrl->Update();
+
+    PinSlot* pin = ctrl->GetPin(6);
+    EXPECT_TRUE(pin->digital_in.invert);
+}
+
+// === Digital Input Error Trigger ===
+
+TEST_F(PinTest, DigitalInputErrorTrigger) {
+    serial.SendLine("configure_digital_in pin=6 error_trigger=1 error_value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Trigger the error condition
+    SET_PIN(6, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasOutput("Error trigger"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, DigitalInputErrorTriggerWithInvert) {
+    // Error triggers when inverted value is true
+    // So physical false (inverted = true) should trigger
+    serial.SendLine("configure_digital_in pin=6 invert=1 error_trigger=1 error_value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Physical false -> inverted true -> triggers error
+    SET_PIN(6, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+// === Digital Output Timeout ===
+
+TEST_F(PinTest, DigitalOutputTimeout) {
+    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Set pin high
+    serial.SendLine("write_pin pin=0 value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Time passes but not enough
+    ADVANCE_TIME(50);
+    ctrl->Update();
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+
+    // Time passes beyond timeout
+    ADVANCE_TIME(60);  // Total 110ms > 100ms
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasOutput("timeout"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, DigitalOutputNoTimeoutWhenLow) {
+    serial.SendLine("configure_digital_out pin=0 max_raised_ms=100");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Pin stays low - no timeout should occur
+    ADVANCE_TIME(200);
+    ctrl->Update();
+
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}
+
+// === Digital Output On Error ===
+
+TEST_F(PinTest, DigitalOutputOnError) {
+    // Configure output with on_error=0 (turn off on error)
+    serial.SendLine("configure_digital_out pin=0 on_error=0");
+    ctrl->Update();
+    serial.SendLine("write_pin pin=0 value=1");  // Set high
+    ctrl->Update();
+    EXPECT_TRUE(g_fake.digital_pins[0]);
+
+    // Configure input with error trigger
+    serial.SendLine("configure_digital_in pin=6 error_trigger=1 error_value=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Trigger error
+    SET_PIN(6, true);
+    ctrl->Update();
+
+    // Output should be set to on_error value (false)
+    EXPECT_FALSE(g_fake.digital_pins[0]);
+}
+
+// === Analog Error Thresholds ===
+
+TEST_F(PinTest, AnalogErrorThresholdLow) {
+    serial.SendLine("configure_analog_in pin=9 error_low=100 error_high=4000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Value below error_low threshold
+    SET_ANALOG(9, 50);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasOutput("threshold"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, AnalogErrorThresholdHigh) {
+    serial.SendLine("configure_analog_in pin=9 error_low=100 error_high=4000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Value above error_high threshold
+    SET_ANALOG(9, 4100);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(PinTest, AnalogErrorThresholdInRange) {
+    // Set value in range BEFORE configuring (initial read happens during config)
+    SET_ANALOG(9, 2000);
+
+    serial.SendLine("configure_analog_in pin=9 error_low=100 error_high=4000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Value stays in range - no error
+    ctrl->Update();
+
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}
+
+// === Analog Stop Thresholds ===
+
+TEST_F(PinTest, AnalogStopThreshold) {
+    // Configure motor first
+    serial.SendLine("configure_stepper motor=0");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.SendLine("move motor=0 steps=10000");
+    ctrl->Update();
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+
+    // Configure analog with stop threshold
+    serial.SendLine("configure_analog_in pin=9 stop_low=100 stop_high=4000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Value below stop_low - should stop motors but NOT enter error
+    SET_ANALOG(9, 50);
+    ctrl->Update();
+
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_TRUE(serial.HasEvent("threshold_stop"));
+    EXPECT_NE(ctrl->GetState(), State::ERROR);  // Not an error, just stopped
+}
+
+// === Analog Periodic Reporting ===
+
+TEST_F(PinTest, AnalogPeriodicReporting) {
+    serial.SendLine("configure_analog_in pin=9 report_interval=100");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    SET_ANALOG(9, 1000);
+
+    // Advance time and update
+    ADVANCE_TIME(110);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("analog"));
+    EXPECT_TRUE(serial.HasOutput("pin=9"));
+    EXPECT_TRUE(serial.HasOutput("value=1000"));
+}
