@@ -276,6 +276,8 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     slot->moving = true;
     slot->velocity_move = false;
     slot->move_seq = cmd.seq;
+    slot->move_epoch = cmd.epoch;
+    slot->has_move_epoch = cmd.has_epoch;
 
     if (is_relative) {
         CutterHal::MoveRelative(slot->motor_index, steps);
@@ -338,6 +340,8 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
     slot->moving = true;
     slot->velocity_move = true;
     slot->move_seq = cmd.seq;
+    slot->move_epoch = cmd.epoch;
+    slot->has_move_epoch = cmd.has_epoch;
     CutterHal::MoveVelocity(slot->motor_index, velocity);
 
     // Restore motor defaults
@@ -409,9 +413,11 @@ static void CmdSetPosition(Controller* ctrl, const ParsedCommand& cmd) {
 // === Homing Commands ===
 
 // Start homing sequence for a motor (called from enable_all and home command)
-void StartHoming(MotorSlot* slot, uint32_t seq) {
+void StartHoming(MotorSlot* slot, uint32_t seq, uint32_t epoch, bool has_epoch) {
     slot->moving = true;
     slot->move_seq = seq;
+    slot->move_epoch = epoch;
+    slot->has_move_epoch = has_epoch;
     slot->homed = false;
 
     if (slot->type == MotorType::GENERIC_STEPPER) {
@@ -446,7 +452,7 @@ static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     // Start homing sequence
-    StartHoming(slot, cmd.seq);
+    StartHoming(slot, cmd.seq, cmd.epoch, cmd.has_epoch);
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -515,8 +521,8 @@ static void CmdEnableAll(Controller* ctrl, const ParsedCommand& cmd) {
     // Transition to ENABLING to wait for HLFB on SDSK motors
     ctrl->GetStateMachine().TransitionTo(State::ENABLING);
 
-    // Store the sequence for enable_all completion event
-    ctrl->SetEnableAllSeq(cmd.seq);
+    // Store the sequence and epoch for enable_all completion event
+    ctrl->SetEnableAllSeq(cmd.seq, cmd.epoch, cmd.has_epoch);
 
     ctrl->Response().Ok();
     if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
@@ -535,8 +541,9 @@ static void CompleteHoming(Controller* ctrl, MotorSlot& motor) {
     motor.homed = true;
 
     ctrl->Response().Event("homed")
-        .Param("motor", static_cast<int32_t>(motor.motor_index))
-        .Param("seq", motor.move_seq);
+        .Param("motor", static_cast<int32_t>(motor.motor_index));
+    if (motor.has_move_epoch) ctrl->Response().Param("epoch", motor.move_epoch);
+    ctrl->Response().Param("seq", motor.move_seq);
     ctrl->SendResponse();
 
     // Check if all motors done

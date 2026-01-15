@@ -16,6 +16,8 @@ Controller::Controller(ISerial* serial)
     , m_nextSeq(1)
     , m_enableAllActive(false)
     , m_enableAllSeq(0)
+    , m_enableAllEpoch(0)
+    , m_hasEnableAllEpoch(false)
     , m_homingOrder{}
     , m_homingCount(0)
     , m_currentHomingIndex(0)
@@ -414,8 +416,9 @@ void Controller::CheckMotors() {
                 CutterHal::StopMotor(motor.motor_index, true);
                 motor.moving = false;
                 m_response.Event("soft_limit")
-                    .Param("motor", static_cast<int32_t>(motor.motor_index))
-                    .Param("seq", motor.move_seq)
+                    .Param("motor", static_cast<int32_t>(motor.motor_index));
+                if (motor.has_move_epoch) m_response.Param("epoch", motor.move_epoch);
+                m_response.Param("seq", motor.move_seq)
                     .Param("position", pos);
                 SendResponse();
 
@@ -438,8 +441,9 @@ void Controller::CheckMotors() {
         if (motor.moving && CutterHal::StepsComplete(motor.motor_index)) {
             motor.moving = false;
             m_response.Event("done")
-                .Param("motor", static_cast<int32_t>(motor.motor_index))
-                .Param("seq", motor.move_seq)
+                .Param("motor", static_cast<int32_t>(motor.motor_index));
+            if (motor.has_move_epoch) m_response.Param("epoch", motor.move_epoch);
+            m_response.Param("seq", motor.move_seq)
                 .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
             SendResponse();
 
@@ -506,8 +510,10 @@ const MotorSlot* Controller::GetMotor(uint8_t index) const {
     return &m_motors[index];
 }
 
-void Controller::SetEnableAllSeq(uint32_t seq) {
+void Controller::SetEnableAllSeq(uint32_t seq, uint32_t epoch, bool has_epoch) {
     m_enableAllSeq = seq;
+    m_enableAllEpoch = epoch;
+    m_hasEnableAllEpoch = has_epoch;
     m_enableAllActive = true;
     m_currentHomingIndex = 0;
     m_homingCount = 0;
@@ -549,7 +555,7 @@ void Controller::SetEnableAllSeq(uint32_t seq) {
 
 void Controller::StartNextHoming() {
     // Forward declaration of StartHoming from MotorCommands.cpp
-    extern void StartHoming(MotorSlot* slot, uint32_t seq);
+    extern void StartHoming(MotorSlot* slot, uint32_t seq, uint32_t epoch, bool has_epoch);
 
     while (m_currentHomingIndex < m_homingCount) {
         uint8_t motor_idx = m_homingOrder[m_currentHomingIndex];
@@ -562,7 +568,7 @@ void Controller::StartNextHoming() {
         }
 
         // Start homing this motor
-        StartHoming(slot, m_enableAllSeq);
+        StartHoming(slot, m_enableAllSeq, m_enableAllEpoch, m_hasEnableAllEpoch);
 
         // Transition to WORKING if needed
         if (m_stateMachine.GetState() == State::READY) {
@@ -570,8 +576,9 @@ void Controller::StartNextHoming() {
         }
 
         m_response.Event("homing_started")
-            .Param("motor", static_cast<int32_t>(motor_idx))
-            .Param("seq", m_enableAllSeq);
+            .Param("motor", static_cast<int32_t>(motor_idx));
+        if (m_hasEnableAllEpoch) m_response.Param("epoch", m_enableAllEpoch);
+        m_response.Param("seq", m_enableAllSeq);
         SendResponse();
 
         return;  // Wait for this motor to finish homing
@@ -579,8 +586,9 @@ void Controller::StartNextHoming() {
 
     // All motors homed - emit completion event
     m_enableAllActive = false;
-    m_response.Event("all_homed")
-        .Param("seq", m_enableAllSeq)
+    m_response.Event("all_homed");
+    if (m_hasEnableAllEpoch) m_response.Param("epoch", m_enableAllEpoch);
+    m_response.Param("seq", m_enableAllSeq)
         .Param("count", static_cast<int32_t>(m_homingCount));
     SendResponse();
 }

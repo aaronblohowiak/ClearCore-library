@@ -535,3 +535,55 @@ TEST_F(MotorTest, MoveVelocityNegativeExceedsMax) {
     EXPECT_TRUE(serial.HasOutput("error"));
     EXPECT_TRUE(serial.HasOutput("code=306"));  // EXCEEDS_LIMIT
 }
+
+// === Event Epoch Tests ===
+
+TEST_F(MotorTest, DoneEventIncludesEpoch) {
+    serial.SendLine("configure_stepper motor=0");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Move with epoch=0 (matches initial state) and seq
+    serial.SendLine("move epoch=0 seq=99 motor=0 steps=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Complete the move
+    g_fake.motor_steps_complete[0] = true;
+    ctrl->Update();
+
+    // Done event should include both epoch and seq
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=99"));
+}
+
+TEST_F(MotorTest, SoftLimitEventIncludesEpoch) {
+    serial.SendLine("configure_stepper motor=0 soft_limits=1 soft_min=0 soft_max=1000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Velocity move with epoch=0 (matches initial state) and seq
+    serial.SendLine("move_velocity epoch=0 seq=55 motor=0 velocity=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Exceed soft limit
+    g_fake.motor_position[0] = 1001;
+    ctrl->Update();
+
+    // Soft limit event should include both epoch and seq
+    EXPECT_TRUE(serial.HasEvent("soft_limit"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=55"));
+}

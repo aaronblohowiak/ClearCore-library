@@ -200,6 +200,8 @@ struct MotorSlot {
     bool moving;
     bool velocity_move;         ///< True if current move is velocity (not position)
     uint32_t move_seq;          ///< Sequence number of current move
+    uint32_t move_epoch;        ///< Epoch of current move (for event correlation)
+    bool has_move_epoch;        ///< Whether move_epoch was provided
 
     // Common enable/homing configuration
     uint8_t enable_priority;    ///< Enable/home order (lower = earlier, default = motor index)
@@ -401,7 +403,7 @@ public:
 
         \param[in] seq Sequence number from enable_all command
     **/
-    void SetEnableAllSeq(uint32_t seq);
+    void SetEnableAllSeq(uint32_t seq, uint32_t epoch, bool has_epoch);
 
     /**
         \brief Check if enable_all sequence is in progress
@@ -450,6 +452,8 @@ private:
     // Enable-all state (sequential enable and homing)
     bool m_enableAllActive;         ///< enable_all command in progress
     uint32_t m_enableAllSeq;        ///< Sequence number for enable_all completion event
+    uint32_t m_enableAllEpoch;      ///< Epoch for enable_all completion event
+    bool m_hasEnableAllEpoch;       ///< Whether epoch was provided for enable_all
     uint8_t m_homingOrder[NUM_MOTORS];  ///< Motor indices sorted by enable_priority
     uint8_t m_homingCount;          ///< Number of motors to home
     uint8_t m_currentHomingIndex;   ///< Index into m_homingOrder for current motor
