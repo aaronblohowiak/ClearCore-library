@@ -228,3 +228,70 @@ TEST_F(ErrorTest, EmergencyStopFromReady) {
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_EQ(ctrl->GetState(), State::ERROR);
 }
+
+// === Stale Sequence Tests ===
+
+TEST_F(ErrorTest, StaleSeqRejected) {
+    // First command with seq=100
+    serial.SendLine("ping seq=100");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Second command with lower seq=50 - should be rejected
+    serial.SendLine("ping seq=50");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=105"));  // STALE_SEQ
+    EXPECT_TRUE(serial.HasOutput("seq=50"));
+    EXPECT_TRUE(serial.HasOutput("max_seen=100"));
+    // Should NOT enter error state - just reject this command
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(ErrorTest, DuplicateSeqRejected) {
+    // First command with seq=100
+    serial.SendLine("ping seq=100");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Second command with same seq=100 - should be rejected
+    serial.SendLine("ping seq=100");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=105"));  // STALE_SEQ
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+}
+
+TEST_F(ErrorTest, IncreasingSeqAccepted) {
+    serial.SendLine("ping seq=1");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    serial.SendLine("ping seq=2");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    serial.SendLine("ping seq=100");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+TEST_F(ErrorTest, SeqWrapAroundAccepted) {
+    // Send command with seq near UINT32_MAX
+    serial.SendLine("ping seq=4294967290");  // UINT32_MAX - 5
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Send command with seq that wrapped (low number after high)
+    // Using serial number arithmetic, 5 is "ahead" of 4294967290
+    serial.SendLine("ping seq=5");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}

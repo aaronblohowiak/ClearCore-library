@@ -14,6 +14,8 @@ Controller::Controller(ISerial* serial)
     , m_responseBuffer{}
     , m_response(m_responseBuffer, sizeof(m_responseBuffer))
     , m_nextSeq(1)
+    , m_maxSeenSeq(0)
+    , m_seenAnySeq(false)
     , m_enableAllActive(false)
     , m_enableAllSeq(0)
     , m_enableAllEpoch(0)
@@ -97,6 +99,24 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         m_response.Param("got", cmd.epoch);
         SendResponse();
         return;
+    }
+
+    // Check seq for staleness (using serial number arithmetic for wrap-around)
+    // A seq is stale if it's <= the max we've seen (accounting for wrap)
+    if (cmd.has_seq) {
+        if (m_seenAnySeq) {
+            int32_t diff = static_cast<int32_t>(cmd.seq - m_maxSeenSeq);
+            if (diff <= 0) {
+                m_response.Error(static_cast<uint32_t>(ErrorCode::STALE_SEQ),
+                               "Sequence number already used");
+                m_response.Param("seq", cmd.seq);
+                m_response.Param("max_seen", m_maxSeenSeq);
+                SendResponse();
+                return;
+            }
+        }
+        m_maxSeenSeq = cmd.seq;
+        m_seenAnySeq = true;
     }
 
     // Built-in commands (available in any state)

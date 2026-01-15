@@ -448,6 +448,8 @@ private:
 
     // Sequence tracking
     uint32_t m_nextSeq;
+    uint32_t m_maxSeenSeq;          ///< Highest seq seen (for stale detection)
+    bool m_seenAnySeq;              ///< Whether any seq has been received
 
     // Enable-all state (sequential enable and homing)
     bool m_enableAllActive;         ///< enable_all command in progress
