@@ -98,11 +98,9 @@ constexpr size_t MAX_COMMAND_LENGTH = 256;
 constexpr size_t MAX_KEY_LENGTH = 32;
 constexpr size_t MAX_VALUE_LENGTH = 64;
 constexpr size_t MAX_PARAMS = 16;
-constexpr size_t MAX_MOTORS = 4;
-constexpr size_t MAX_DIGITAL_PINS = 13;    // IO-0 through A-12
-constexpr size_t MAX_MONITORS = 8;
+constexpr size_t NUM_PINS = 13;            // IO-0 through A-12
+constexpr size_t NUM_MOTORS = 4;           // M-0 through M-3
 constexpr size_t MAX_RESPONSE_LENGTH = 512;
-constexpr size_t MAX_PENDING_COMMANDS = 4; // Small queue for burst handling
 ```
 
 ## File Structure
@@ -116,9 +114,8 @@ libCutter/
 │   ├── CutterCommand.h          # Command structures and enums
 │   ├── CutterResponse.h         # Response formatting
 │   ├── CommandParser.h          # Line parser, key-value extraction
-│   ├── MotorConfig.h            # Motor configuration structures
-│   ├── PinConfig.h              # Pin configuration structures
-│   ├── Monitor.h                # I/O monitoring with thresholds
+│   ├── MotorState.h             # Motor config + runtime state
+│   ├── PinState.h               # Pin config + runtime state (includes monitoring)
 │   └── ErrorHandler.h           # Error state management
 ├── src/
 │   ├── Cutter.cpp               # Main controller implementation
@@ -127,8 +124,6 @@ libCutter/
 │   ├── CommandDispatcher.cpp    # Command routing
 │   ├── MotorCommands.cpp        # Motor command handlers
 │   ├── PinCommands.cpp          # Pin command handlers
-│   ├── ConfigCommands.cpp       # Configuration command handlers
-│   ├── MonitorManager.cpp       # Monitoring logic
 │   ├── ResponseWriter.cpp       # Response formatting
 │   └── ErrorHandler.cpp         # Error handling
 └── examples/
@@ -167,7 +162,9 @@ struct ParsedCommand {
 };
 ```
 
-### Pin Configuration
+### Pin State (Unified Config + Runtime + Monitoring)
+
+Each of the 13 pins has a single `PinState` struct that holds configuration, runtime state, and monitoring behavior. No separate monitor system needed.
 
 ```cpp
 enum class PinMode : uint8_t {
@@ -181,54 +178,61 @@ enum class PinMode : uint8_t {
     END_STOP
 };
 
-struct DigitalInConfig {
-    uint8_t pin;
-    bool error_trigger_enabled;
-    bool error_trigger_value;      // Trigger error when pin equals this value
-    bool invert;
-};
-
-struct DigitalOutConfig {
-    uint8_t pin;
-    uint32_t max_raised_ms;        // 0 = no limit
-    int8_t on_error;               // -1 = don't change, 0 = low, 1 = high
-    uint32_t raised_at_ms;         // Timestamp when raised (for timeout)
-};
-
-struct AnalogInConfig {
-    uint8_t pin;                   // 9, 10, 11, or 12
-    int16_t error_threshold_low;   // Trigger error if below (or INT16_MIN to disable)
-    int16_t error_threshold_high;  // Trigger error if above (or INT16_MAX to disable)
-};
-
-struct PwmConfig {
-    uint8_t pin;                   // 4 or 5
-    bool stop_on_error;
-    int16_t amplitude;             // Scaling factor
-};
-
-struct EndStopConfig {
-    uint8_t pin;
-    uint8_t motor;
-    int8_t direction;              // -1 or 1, direction where this stop applies
-    bool active_low;               // Pin state that indicates activated
-};
-
-// Union of all pin configs with discriminator
-struct PinConfiguration {
+// Unified pin state - config + runtime + monitoring in one struct
+struct PinState {
+    // === Configuration (set during configure_* commands) ===
     PinMode mode;
     uint8_t pin_index;
-    union {
-        DigitalInConfig digital_in;
-        DigitalOutConfig digital_out;
-        AnalogInConfig analog_in;
-        PwmConfig pwm;
-        EndStopConfig end_stop;
-    };
+
+    // Digital input options
+    bool invert;                     // Invert logical value
+    bool error_trigger_enabled;      // Trigger error on specific value
+    bool error_trigger_value;        // Value that triggers error
+
+    // Digital output options
+    uint32_t max_raised_ms;          // Auto-lower after this duration (0 = disabled)
+    int8_t on_error;                 // -1 = no change, 0 = low, 1 = high
+
+    // Analog thresholds (for ANALOG_IN mode)
+    int16_t error_threshold_low;     // INT16_MIN = disabled
+    int16_t error_threshold_high;    // INT16_MAX = disabled
+    int16_t stop_threshold_low;      // Stop motors if below (INT16_MIN = disabled)
+    int16_t stop_threshold_high;     // Stop motors if above (INT16_MAX = disabled)
+
+    // Reporting behavior (monitoring baked in)
+    bool report_changes;             // Report digital value changes
+    uint32_t report_interval_ms;     // Report analog at interval (0 = disabled)
+    bool report_threshold_cross;     // Report when crossing thresholds
+
+    // PWM/H-Bridge options
+    bool stop_on_error;
+    int16_t amplitude;               // PWM scaling factor
+
+    // End stop options
+    int8_t end_stop_motor;           // Motor this end stop is for (-1 = none)
+    int8_t end_stop_direction;       // Direction where this stop applies
+    bool end_stop_active_low;        // Pin state that indicates activated
+
+    // === Runtime State (updated during operation) ===
+    int16_t last_value;              // Last read value (digital 0/1 or analog)
+    uint32_t last_report_ms;         // Timestamp of last report
+    uint32_t raised_at_ms;           // When output was set high (for timeout)
+    bool threshold_triggered;        // Currently in threshold violation
+
+    // === Methods ===
+    void Check(uint32_t now_ms, CutterController* controller);
+    void ApplyErrorState();
+    int16_t Read();                  // Read current value
+    void Write(int16_t value);       // Write value (for outputs)
 };
+
+// Static array of all pins
+PinState pins[NUM_PINS];  // 13 pins total
 ```
 
-### Motor Configuration
+### Motor State (Unified Config + Runtime)
+
+Each of the 4 motors has a single `MotorState` struct.
 
 ```cpp
 enum class MotorType : uint8_t {
@@ -237,66 +241,51 @@ enum class MotorType : uint8_t {
     GENERIC_STEPPER    // Step/dir stepper
 };
 
-struct ClearPathConfig {
-    uint8_t motor;                 // 0-3
-    uint8_t enable_priority;       // Order for enabling (0 = first)
-    bool enable_on_ready;          // Auto-enable when entering Ready state
-    int8_t homing_end_stop;        // Pin for homing (-1 = none)
-    int8_t far_end_stop;           // Pin for far limit (-1 = none)
-    int8_t homing_dir;             // Direction for homing (-1 or 1)
-};
-
-struct GenericStepperConfig {
-    uint8_t motor;
-    uint8_t enable_priority;
-    bool enable_on_ready;
-    int8_t homing_end_stop;
-    int8_t far_end_stop;
-    int8_t homing_dir;
-    uint32_t steps_per_unit;       // For unit conversion (optional)
-};
-
-struct MotorConfiguration {
+struct MotorState {
+    // === Configuration ===
     MotorType type;
     uint8_t motor_index;
-    union {
-        ClearPathConfig clearpath;
-        GenericStepperConfig stepper;
-    };
+    uint8_t enable_priority;         // Order for enabling (0 = first)
+    bool enable_on_ready;            // Auto-enable when entering Ready state
 
-    // Runtime state
+    // Homing configuration
+    int8_t homing_end_stop_pin;      // Pin for homing (-1 = none)
+    int8_t far_end_stop_pin;         // Pin for far limit (-1 = none)
+    int8_t homing_dir;               // Direction for homing (-1 or 1)
+    int32_t homing_velocity;         // Velocity during homing
+    int32_t homing_backoff;          // Steps to back off after hitting stop
+
+    // Motion parameters
+    int32_t vel_max;
+    int32_t accel_max;
+    int32_t vel_limit;               // Software velocity limit
+
+    // Stepper-specific
+    uint32_t steps_per_unit;         // For unit conversion (0 = use steps directly)
+
+    // === Runtime State ===
     bool is_enabled;
     bool is_homing;
     bool has_homed;
-    int32_t position;              // Current position in steps
+    bool is_moving;
+    int32_t position;                // Current position in steps
+
+    // Move tracking for completion events
+    uint32_t active_move_seq;        // Sequence number of in-progress move
+    bool move_pending_done;          // Move completed, event not yet sent
+
+    // HLFB state (ClearPath only)
+    uint8_t hlfb_state;
+    uint8_t last_hlfb_state;
+
+    // === Methods ===
+    void Check(uint32_t now_ms, CutterController* controller);
+    bool IsReady();                   // HLFB or stepper ready
+    bool IsMoveComplete();            // Check StepsComplete or HLFB
 };
-```
 
-### Monitor Configuration
-
-```cpp
-enum class MonitorType : uint8_t {
-    NONE = 0,
-    DIGITAL_POLL,          // Report value changes
-    ANALOG_POLL,           // Report value at interval
-    ANALOG_THRESHOLD,      // Report when crossing threshold
-    ANALOG_STOP_THRESHOLD  // Stop motors when crossing threshold
-};
-
-struct MonitorConfig {
-    MonitorType type;
-    uint8_t pin;
-    uint32_t interval_ms;          // Polling interval
-    int16_t threshold_low;
-    int16_t threshold_high;
-    bool trigger_error;            // Enter error state on trigger
-    bool stop_motors;              // Stop all motors on trigger
-
-    // Runtime state
-    uint32_t last_report_ms;
-    int16_t last_value;
-    bool triggered;
-};
+// Static array of all motors
+MotorState motors[NUM_MOTORS];  // 4 motors total
 ```
 
 ### Cutter State
@@ -543,31 +532,32 @@ tone pin=4 freq=440 [duration_ms=1000]
 → event type=tone_done pin=4  # If duration specified
 ```
 
-### Monitor Commands
+### Reporting Options (Integrated into Configuration)
+
+Monitoring is configured as part of pin setup, not as a separate system.
 
 ```
-# Set up polling monitor for digital input
-monitor_digital pin=6 [interval_ms=100]
+# Digital input with change reporting
+configure_digital_in pin=6 report_changes=1
 → ok
 → event type=input pin=6 value=1  # Async on change
 
-# Set up polling monitor for analog input
-monitor_analog pin=9 interval_ms=100
+# Analog input with interval reporting
+configure_analog_in pin=9 report_interval_ms=100
 → ok
 → event type=analog pin=9 value=2048  # Async at interval
 
-# Set up threshold monitor
-monitor_threshold pin=9 low=1000 high=3000 [trigger_error=0] [stop_motors=1]
+# Analog input with threshold monitoring
+configure_analog_in pin=9 stop_low=1000 stop_high=3000 report_threshold=1
 → ok
-→ event type=threshold pin=9 value=950 trigger=low  # When crossed
+→ event type=threshold pin=9 value=950 direction=low  # When crossed
 
-# Remove monitor
-unmonitor pin=6
+# Modify reporting on already-configured pin
+set_reporting pin=6 report_changes=0
 → ok
 
-# List active monitors
-list_monitors
-→ ok count=2 monitors="6,9"
+set_reporting pin=9 report_interval_ms=0 report_threshold=0
+→ ok
 ```
 
 ## Implementation Phases
@@ -575,23 +565,20 @@ list_monitors
 ### Phase 1: Core Infrastructure
 
 **Files to create:**
-- `CutterConfig.h` - Constants and limits
+- `CutterConfig.h` - Constants, limits, pin capability tables
 - `CutterState.h/cpp` - State machine
 - `CommandParser.h/cpp` - Line parsing
 - `CutterResponse.h/cpp` - Response formatting
+- `ErrorHandler.h` - Error codes
 
 **Functionality:**
-- State machine transitions
-- Command line parsing (no malloc)
-- Key-value extraction
+- State machine with valid transition checks
+- Command line parsing (no malloc, fixed buffers)
+- Key-value extraction with type conversion
 - Response string building
-- Basic error handling
+- Error code enum
 
-**Testing:**
-- Unit tests for parser
-- State transition tests
-
-### Phase 2: Communication Layer
+### Phase 2: Communication & Main Loop
 
 **Files to create:**
 - `Cutter.h/cpp` - Main controller class
@@ -600,126 +587,82 @@ list_monitors
 **Functionality:**
 - USB Serial integration
 - Ethernet TCP server integration
-- Input buffering (line accumulation)
+- Input line buffering and accumulation
 - Output buffering
-- Sequence number tracking
-- Epoch validation
-- Connection state management
+- Sequence number tracking and epoch validation
+- Main `Update()` loop structure
+- System commands: `ping`, `get_version`, `get_state`, `get_next_seq`
 
-**Testing:**
-- USB echo test
-- Ethernet connection test
-- Sequence validation test
-
-### Phase 3: Pin Configuration & Control
+### Phase 3: Pin State & Configuration
 
 **Files to create:**
-- `PinConfig.h`
-- `PinCommands.cpp`
+- `PinState.h/cpp` - Unified pin config + runtime + monitoring
 
 **Functionality:**
-- Digital input configuration
-- Digital output configuration (with timeout)
-- Analog input configuration
-- PWM configuration (pins 4, 5)
-- H-Bridge configuration (pins 4, 5)
-- End stop configuration
-- Pin state reading/writing
+- `PinState` struct with all fields
+- `PinState::Check()` method for self-monitoring
+- Configuration commands: `configure_digital_in`, `configure_digital_out`, `configure_analog_in`, `configure_pwm`, `configure_hbridge`
+- Control commands: `set_output`, `get_input`, `get_analog`, `set_pwm`, `set_hbridge`
+- Digital output timeout logic
+- Analog threshold checking (error and stop triggers)
+- Change reporting for digital inputs
+- Interval reporting for analog inputs
 
-**Testing:**
-- Each pin type configuration
-- Timeout behavior for digital outputs
-- End stop triggering
-
-### Phase 4: Motor Configuration & Basic Control
+### Phase 4: Motor State & Configuration
 
 **Files to create:**
-- `MotorConfig.h`
-- `MotorCommands.cpp`
+- `MotorState.h/cpp` - Unified motor config + runtime
 
 **Functionality:**
-- ClearPath motor configuration
-- Generic stepper configuration
-- Motor parameter setting (vel, accel)
-- Enable/disable sequencing
-- Basic move commands (relative, absolute, velocity)
-- Stop commands
-- Position queries
+- `MotorState` struct with all fields
+- `MotorState::Check()` method for completion detection
+- Configuration commands: `configure_sdsk`, `configure_stepper`, `set_motor_params`
+- `configuration_done` command to transition to CONFIGURED
 
-**Testing:**
-- Motor configuration
-- Enable sequence with priorities
-- Basic moves
-- Stop behavior
-
-### Phase 5: HLFB & Completion Notifications
+### Phase 5: Motor Control & Completion
 
 **Functionality:**
-- HLFB state monitoring for ClearPath
+- Enable/disable: `enable`, `disable`, `enable_motor`, `disable_motor`
+- Priority-based enable sequencing
+- Move commands: `move`, `move_to`, `move_velocity`
+- Stop commands: `stop`, `stop_immediate`, `stop_all`
+- Status query: `get_motor_status`, `set_position`
+- HLFB monitoring for ClearPath motors
 - StepsComplete monitoring for generic steppers
-- Async "done" event generation
-- Command completion correlation (seq numbers)
-
-**Testing:**
-- HLFB state changes
-- Move completion events
-- Sequence correlation
+- Async "done" event generation with seq correlation
 
 ### Phase 6: Homing & End Stops
 
 **Functionality:**
-- Homing sequence implementation
+- `configure_end_stop` command linking pins to motors
+- `home` command implementation
+- Homing sequence: move toward stop, detect, back off, zero position
 - End stop monitoring during normal operation
 - Error triggering on unexpected end stop activation
-- Position zeroing after home
+- `event type=homed` generation
 
-**Testing:**
-- Homing sequence
-- End stop error triggering
-- Position after homing
-
-### Phase 7: Monitoring System
-
-**Files to create:**
-- `Monitor.h`
-- `MonitorManager.cpp`
+### Phase 7: Error Handling & Recovery
 
 **Functionality:**
-- Digital input change monitoring
-- Analog input polling
-- Threshold monitoring with callbacks
-- Error triggering from monitors
-- Motor stop triggering from monitors
+- `EnterError()` method with state transition
+- Apply `on_error` values to digital outputs
+- Stop PWM/H-Bridge if `stop_on_error` set
+- Disable all motors on error
+- `emergency_stop` command
+- `reset` command (increment epoch, return to CONNECTED)
+- `event type=error` generation
 
-**Testing:**
-- Digital change events
-- Analog polling events
-- Threshold crossing events
-- Error and stop triggering
-
-### Phase 8: Error Handling & Recovery
+### Phase 8: Examples & Testing
 
 **Files to create:**
-- `ErrorHandler.h/cpp`
-
-**Functionality:**
-- Error state management
-- Error code definitions
-- On-error pin behavior
-- Reset and epoch increment
-- Error recovery sequence
+- `examples/BasicUsb/BasicUsb.cpp` - Minimal USB setup
+- `examples/EthernetServer/EthernetServer.cpp` - TCP server
+- `examples/FullSystem/FullSystem.cpp` - Complete machine
 
 **Testing:**
-- Error state entry from various triggers
-- Pin behavior on error
-- Reset and epoch handling
-
-### Phase 9: Documentation & Examples
-
-**Files to create:**
-- Example applications
-- API documentation
-- Protocol specification document
+- Manual testing via USB serial
+- Python test scripts for automated command sequences
+- Stress testing for sequence handling
 
 ## Error Codes
 
@@ -794,18 +737,125 @@ int main() {
     // cutter.Initialize(&server);
 
     while (true) {
-        // Process incoming commands and generate responses
         cutter.Update();
-
-        // Update is non-blocking, handles:
-        // - Reading input from serial/ethernet
-        // - Parsing complete lines
-        // - Executing commands
-        // - Generating responses
-        // - Monitoring I/O
-        // - Checking motor completion
-        // - Managing timeouts
     }
+}
+```
+
+### Update() Implementation
+
+The `Update()` method iterates through all configured pins and motors. Each object checks itself.
+
+```cpp
+void CutterController::Update() {
+    uint32_t now = Milliseconds();
+
+    // 1. Read available serial/ethernet input, accumulate lines
+    ReadInput();
+
+    // 2. If we have a complete line, parse and dispatch
+    if (HasCompleteLine()) {
+        ParsedCommand cmd;
+        if (parser_.Parse(line_buffer_, &cmd)) {
+            DispatchCommand(cmd);
+        }
+        ClearLineBuffer();
+    }
+
+    // 3. Check each configured pin (thresholds, timeouts, changes)
+    for (uint8_t i = 0; i < NUM_PINS; i++) {
+        if (pins_[i].mode != PinMode::UNCONFIGURED) {
+            pins_[i].Check(now, this);
+        }
+    }
+
+    // 4. Check each configured motor (completion, HLFB, faults)
+    for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+        if (motors_[i].type != MotorType::UNCONFIGURED) {
+            motors_[i].Check(now, this);
+        }
+    }
+
+    // 5. Flush any queued responses/events
+    FlushOutput();
+}
+```
+
+### PinState::Check() Implementation
+
+```cpp
+void PinState::Check(uint32_t now, CutterController* ctrl) {
+    int16_t value = Read();
+
+    // Digital input: check for changes and error triggers
+    if (mode == PinMode::DIGITAL_IN || mode == PinMode::END_STOP) {
+        if (report_changes && value != last_value) {
+            ctrl->SendEvent("input", "pin", pin_index, "value", value);
+        }
+        if (error_trigger_enabled && value == error_trigger_value) {
+            ctrl->EnterError(CutterError::ERROR_INPUT_TRIGGERED, "Pin %d triggered", pin_index);
+        }
+        last_value = value;
+    }
+
+    // Digital output: check timeout
+    if (mode == PinMode::DIGITAL_OUT && max_raised_ms > 0) {
+        if (last_value == 1 && (now - raised_at_ms) >= max_raised_ms) {
+            Write(0);
+            ctrl->SendEvent("timeout", "pin", pin_index);
+        }
+    }
+
+    // Analog input: check thresholds and reporting interval
+    if (mode == PinMode::ANALOG_IN) {
+        // Error thresholds
+        if (value < error_threshold_low || value > error_threshold_high) {
+            ctrl->EnterError(CutterError::ANALOG_THRESHOLD_EXCEEDED, "Pin %d: %d", pin_index, value);
+        }
+        // Stop thresholds
+        if (value < stop_threshold_low || value > stop_threshold_high) {
+            if (!threshold_triggered) {
+                ctrl->StopAllMotors();
+                threshold_triggered = true;
+                if (report_threshold_cross) {
+                    ctrl->SendEvent("threshold", "pin", pin_index, "value", value);
+                }
+            }
+        } else {
+            threshold_triggered = false;
+        }
+        // Interval reporting
+        if (report_interval_ms > 0 && (now - last_report_ms) >= report_interval_ms) {
+            ctrl->SendEvent("analog", "pin", pin_index, "value", value);
+            last_report_ms = now;
+        }
+        last_value = value;
+    }
+}
+```
+
+### MotorState::Check() Implementation
+
+```cpp
+void MotorState::Check(uint32_t now, CutterController* ctrl) {
+    // Update HLFB state for ClearPath motors
+    if (type == MotorType::CLEARPATH_SDSK) {
+        hlfb_state = GetHlfbState(motor_index);
+        if (hlfb_state != last_hlfb_state) {
+            ctrl->SendEvent("hlfb", "motor", motor_index, "state", hlfb_state);
+            last_hlfb_state = hlfb_state;
+        }
+    }
+
+    // Check move completion
+    if (is_moving && IsMoveComplete()) {
+        is_moving = false;
+        ctrl->SendEvent("done", "motor", motor_index, "seq", active_move_seq);
+        active_move_seq = 0;
+    }
+
+    // Update position from hardware
+    position = GetMotorPosition(motor_index);
 }
 ```
 
@@ -822,8 +872,8 @@ The ClearCore runs single-threaded with a 5kHz ISR for hardware updates. Cutter 
 
 1. **Command parsing**: O(n) where n is command length, no allocations
 2. **Response generation**: Fixed buffer, snprintf-style formatting
-3. **Monitor updates**: Checked every `Update()` call, O(m) where m is monitor count
-4. **Motor polling**: HLFB and StepsComplete checked every `Update()` call
+3. **Pin checks**: O(13) per `Update()` call - iterate all pins, only process configured ones
+4. **Motor checks**: O(4) per `Update()` call - HLFB and StepsComplete checked
 
 ## Memory Budget
 
@@ -831,13 +881,13 @@ The ClearCore runs single-threaded with a 5kHz ISR for hardware updates. Cutter 
 Static allocations:
 - Command buffer:        256 bytes
 - Response buffer:       512 bytes
-- Pin configs (13):      ~520 bytes (40 bytes each)
-- Motor configs (4):     ~160 bytes (40 bytes each)
-- Monitor configs (8):   ~192 bytes (24 bytes each)
-- State/status:          ~128 bytes
+- PinState (13):         ~780 bytes (60 bytes each)
+- MotorState (4):        ~240 bytes (60 bytes each)
+- CutterStatus:          ~128 bytes
 - Parsing workspace:     ~512 bytes
+- Line buffer:           256 bytes
 ─────────────────────────────────────
-Total:                   ~2.3 KB
+Total:                   ~2.7 KB
 
 ClearCore has 256KB SRAM, so this is well within budget.
 ```

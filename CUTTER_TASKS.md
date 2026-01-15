@@ -5,9 +5,9 @@
 ### 1.1 Configuration Constants
 - [ ] Create `libCutter/inc/CutterConfig.h`
   - Define `MAX_COMMAND_LENGTH`, `MAX_KEY_LENGTH`, `MAX_VALUE_LENGTH`
-  - Define `MAX_PARAMS`, `MAX_MOTORS`, `MAX_DIGITAL_PINS`
-  - Define `MAX_MONITORS`, `MAX_RESPONSE_LENGTH`
-  - Pin capability mappings (which pins support which modes)
+  - Define `MAX_PARAMS`, `NUM_PINS`, `NUM_MOTORS`
+  - Define `MAX_RESPONSE_LENGTH`
+  - Pin capability tables (which pins support which modes)
 
 ### 1.2 State Machine
 - [ ] Create `libCutter/inc/CutterState.h`
@@ -23,266 +23,245 @@
 - [ ] Create `libCutter/inc/CommandParser.h`
   - `ParsedCommand` struct with fixed-size arrays
   - `CommandParser` class declaration
-  - Helper methods for type extraction
+  - Helper methods for type extraction (GetInt, GetBool, GetString)
 - [ ] Create `libCutter/src/CommandParser.cpp`
-  - Line tokenization (handle comments, whitespace)
-  - Key-value parsing
-  - Integer/float/bool extraction
-  - Command name extraction
+  - Skip comments and empty lines
+  - Tokenize by whitespace
+  - Extract command name
+  - Parse key=value pairs into params array
+  - Integer/float/bool extraction helpers
 
 ### 1.4 Response Writer
 - [ ] Create `libCutter/inc/CutterResponse.h`
   - `ResponseWriter` class with fixed buffer
   - Methods: `Ok()`, `Error()`, `Event()`, `Debug()`
-  - Parameter appending methods
+  - Chained parameter appending
 - [ ] Create `libCutter/src/ResponseWriter.cpp`
   - String formatting without allocation
-  - Buffer management
-  - Newline handling
+  - Buffer management with overflow protection
+  - Newline termination
+
+### 1.5 Error Codes
+- [ ] Create `libCutter/inc/ErrorHandler.h`
+  - `CutterError` enum with all error codes (100-699 ranges)
+  - Error code to string helper
 
 ---
 
-## Phase 2: Communication Layer
+## Phase 2: Communication & Main Loop
 
 ### 2.1 Main Controller Class
 - [ ] Create `libCutter/inc/Cutter.h`
   - `CutterController` class
-  - Initialize methods for Serial/Ethernet
+  - `PinState pins_[NUM_PINS]` array
+  - `MotorState motors_[NUM_MOTORS]` array
+  - `CutterStatus status_`
+  - `Initialize(ISerial*)` for USB
+  - `Initialize(EthernetTcpServer*)` for Ethernet
   - `Update()` method
-  - State accessors
 - [ ] Create `libCutter/src/Cutter.cpp`
-  - Input line buffering
-  - Command dispatch loop
-  - Response sending
-  - Connection state management
+  - Input line buffering (accumulate until newline)
+  - `Update()` loop: ReadInput → ParseLine → CheckPins → CheckMotors → FlushOutput
+  - Connection state detection
 
 ### 2.2 Command Dispatcher
 - [ ] Create `libCutter/src/CommandDispatcher.cpp`
-  - Command name lookup table
-  - Dispatch to appropriate handler
+  - Command name to handler mapping (static table or switch)
+  - Epoch validation (reject if mismatch)
+  - Sequence number validation (reject if not expected)
   - Unknown command handling
-  - Epoch/seq validation
 
 ### 2.3 System Commands
-- [ ] Implement in `Cutter.cpp` or separate file:
-  - `get_version` - Return protocol version
-  - `get_state` - Return current state
-  - `get_next_seq` - Return expected sequence
-  - `ping` - Keepalive response
-  - `reset` - Error recovery
-  - `emergency_stop` - Manual error trigger
-  - `set_debug` - Enable/disable debug output
+- [ ] Implement in `Cutter.cpp`:
+  - `ping` → `ok`
+  - `get_version` → `ok version=1.0 protocol=cutter ...`
+  - `get_state` → `ok state=ready epoch=0 seq=123`
+  - `get_next_seq` → `ok epoch=0 seq=124`
+  - `set_debug enabled=1` → enable/disable debug output
 
 ---
 
-## Phase 3: Pin Configuration & Control
+## Phase 3: Pin State & Configuration
 
-### 3.1 Pin Configuration Structures
-- [ ] Create `libCutter/inc/PinConfig.h`
+### 3.1 Pin State Structure
+- [ ] Create `libCutter/inc/PinState.h`
   - `PinMode` enum
-  - `DigitalInConfig`, `DigitalOutConfig` structs
-  - `AnalogInConfig`, `PwmConfig` structs
-  - `EndStopConfig` struct
-  - `PinConfiguration` union wrapper
+  - `PinState` struct with all config + runtime fields
+  - `Check()` method declaration
+  - `Read()` and `Write()` method declarations
+- [ ] Create `libCutter/src/PinState.cpp`
+  - `Check()` implementation (see design doc)
+  - `Read()` - read from ClearCore connector
+  - `Write()` - write to ClearCore connector
+  - `ApplyErrorState()` - apply on_error value
 
-### 3.2 Pin Manager
-- [ ] Create `libCutter/src/PinCommands.cpp`
-  - `configure_digital_in` handler
-  - `configure_digital_out` handler
-  - `configure_analog_in` handler
-  - `configure_pwm` handler
-  - `configure_hbridge` handler
-  - `configure_end_stop` handler
+### 3.2 Pin Configuration Commands
+- [ ] Add to `PinCommands.cpp`:
+  - `configure_digital_in pin=N [error_trigger=V] [invert=0] [report_changes=0]`
+  - `configure_digital_out pin=N [max_raised_ms=0] [on_error=-1]`
+  - `configure_analog_in pin=N [error_low=INT16_MIN] [error_high=INT16_MAX] [stop_low=INT16_MIN] [stop_high=INT16_MAX] [report_interval_ms=0] [report_threshold=0]`
+  - `configure_pwm pin=N [stop_on_error=1] [amplitude=INT16_MAX]`
+  - `configure_hbridge pin=N [stop_on_error=1]`
+  - Validate pin capabilities for each mode
 
 ### 3.3 Pin Control Commands
 - [ ] Add to `PinCommands.cpp`:
-  - `set_output` - Set digital output
-  - `get_input` - Read digital input
-  - `get_analog` - Read analog value
-  - `set_pwm` - Set PWM duty
-  - `set_pwm_freq` - Set PWM frequency
-  - `set_hbridge` - Set H-bridge output
-  - `tone` - Generate tone
+  - `set_output pin=N value=V` - set digital output
+  - `get_input pin=N` → `ok pin=N value=V`
+  - `get_analog pin=N` → `ok pin=N value=V`
+  - `set_pwm pin=N duty=V`
+  - `set_pwm_freq pin=N freq=V`
+  - `set_hbridge pin=N value=V`
+  - `tone pin=N freq=F [duration_ms=D]`
+  - `set_reporting pin=N [report_changes=...] [report_interval_ms=...]`
 
-### 3.4 Digital Output Timeout
-- [ ] Implement max_raised_ms timeout logic
-  - Track when pin was raised
-  - Check timeout in Update() loop
-  - Auto-lower when expired
+### 3.4 Pin Check Logic (in Update loop)
+- [ ] Digital input: detect changes, send events, check error triggers
+- [ ] Digital output: check max_raised_ms timeout
+- [ ] Analog input: check thresholds, send interval reports
 
 ---
 
-## Phase 4: Motor Configuration & Control
+## Phase 4: Motor State & Configuration
 
-### 4.1 Motor Configuration Structures
-- [ ] Create `libCutter/inc/MotorConfig.h`
+### 4.1 Motor State Structure
+- [ ] Create `libCutter/inc/MotorState.h`
   - `MotorType` enum
-  - `ClearPathConfig`, `GenericStepperConfig` structs
-  - `MotorConfiguration` union wrapper
-  - Runtime state fields
+  - `MotorState` struct with config + runtime fields
+  - `Check()` method declaration
+- [ ] Create `libCutter/src/MotorState.cpp`
+  - `Check()` implementation
+  - `IsReady()` - check HLFB or stepper ready state
+  - `IsMoveComplete()` - check StepsComplete or HLFB
 
 ### 4.2 Motor Configuration Commands
-- [ ] Create `libCutter/src/MotorCommands.cpp`
-  - `configure_sdsk` - ClearPath with HLFB
-  - `configure_stepper` - Generic stepper
-  - `set_motor_params` - Velocity/acceleration
-  - `configuration_done` - Finalize config
-
-### 4.3 Motor Enable Commands
 - [ ] Add to `MotorCommands.cpp`:
-  - `enable` - Enable all configured motors
-  - `disable` - Disable all motors
-  - `enable_motor` - Enable single motor
-  - `disable_motor` - Disable single motor
-  - Priority-based enable sequencing
-
-### 4.4 Motor Move Commands
-- [ ] Add to `MotorCommands.cpp`:
-  - `move` - Relative move
-  - `move_to` - Absolute move
-  - `move_velocity` - Continuous velocity
-  - `stop` - Decelerate to stop
-  - `stop_immediate` - Hard stop
-  - `stop_all` - Stop all motors
-
-### 4.5 Motor Status Commands
-- [ ] Add to `MotorCommands.cpp`:
-  - `get_motor_status` - Query motor state
-  - `set_position` - Set position without moving
+  - `configure_sdsk motor=N [enable_priority=0] [enable_on_ready=1] [homing_end_stop=-1] [far_end_stop=-1] [homing_dir=-1]`
+  - `configure_stepper motor=N [enable_priority=0] [enable_on_ready=1] [homing_end_stop=-1] [far_end_stop=-1] [homing_dir=-1] [steps_per_unit=0]`
+  - `set_motor_params motor=N vel_max=V accel_max=A [vel_limit=L]`
+  - `configuration_done` - validate config, transition to CONFIGURED
 
 ---
 
-## Phase 5: HLFB & Completion Notifications
+## Phase 5: Motor Control & Completion
 
-### 5.1 HLFB Monitoring
-- [ ] Add HLFB state tracking to motor runtime state
-- [ ] Poll HLFB in Update() for ClearPath motors
-- [ ] Generate `event type=hlfb` on state changes
+### 5.1 Enable/Disable
+- [ ] `enable` - enable all motors with enable_on_ready=1, in priority order
+- [ ] `disable` - disable all motors
+- [ ] `enable_motor motor=N` - enable single motor
+- [ ] `disable_motor motor=N` - disable single motor
+- [ ] Track ENABLING state, transition to READY when all motors ready
 
-### 5.2 Move Completion Detection
-- [ ] Track in-progress moves with sequence numbers
-- [ ] Check StepsComplete() for generic steppers
-- [ ] Check HLFB for ClearPath move completion
-- [ ] Generate `event type=done` when move completes
+### 5.2 Move Commands
+- [ ] `move motor=N steps=S [vel=V] [accel=A]` - relative move
+- [ ] `move_to motor=N position=P [vel=V] [accel=A]` - absolute move
+- [ ] `move_velocity motor=N velocity=V` - continuous velocity
+- [ ] Track active_move_seq for completion correlation
+- [ ] Set is_moving flag
 
-### 5.3 Sequence Correlation
-- [ ] Associate seq number with each move command
-- [ ] Include seq in completion events
-- [ ] Handle multiple concurrent moves (different motors)
+### 5.3 Stop Commands
+- [ ] `stop motor=N [accel=A]` - decelerate to stop
+- [ ] `stop_immediate motor=N` - hard stop
+- [ ] `stop_all [immediate=0]` - stop all motors
+
+### 5.4 Status Commands
+- [ ] `get_motor_status motor=N` → position, velocity, enabled, homed, moving, hlfb
+- [ ] `set_position motor=N position=P` - set position without moving
+
+### 5.5 Completion Detection (in Check loop)
+- [ ] Poll HLFB for ClearPath motors
+- [ ] Poll StepsComplete() for generic steppers
+- [ ] Send `event type=done motor=N seq=S` when move completes
+- [ ] Send `event type=hlfb motor=N state=S` on HLFB changes
 
 ---
 
 ## Phase 6: Homing & End Stops
 
-### 6.1 End Stop Monitoring
-- [ ] Check end stop pins in Update()
-- [ ] Trigger error if activated outside homing
-- [ ] Direction-aware activation (only trigger if moving toward stop)
+### 6.1 End Stop Configuration
+- [ ] `configure_end_stop pin=N motor=M [direction=D] [active_low=1]`
+- [ ] Link pin to motor in PinState
+- [ ] Set pin mode to END_STOP
 
-### 6.2 Homing Sequence
-- [ ] Implement `home` command handler
-- [ ] Move toward homing end stop at homing velocity
+### 6.2 End Stop Monitoring
+- [ ] In PinState::Check(), if mode==END_STOP:
+  - Check if motor is moving toward this stop
+  - If activated outside homing, trigger error
+  - During homing, signal stop reached
+
+### 6.3 Homing Command
+- [ ] `home motor=N [velocity=V] [backoff=B]`
+- [ ] Set is_homing flag
+- [ ] Start velocity move toward homing_end_stop
 - [ ] Detect end stop activation
-- [ ] Back off from end stop
+- [ ] Stop motor
+- [ ] Back off by backoff steps
 - [ ] Zero position
-- [ ] Generate `event type=homed`
-
-### 6.3 Far End Stop
-- [ ] Monitor far end stop during normal moves
-- [ ] Trigger error if activated
-- [ ] Include in error message which stop triggered
+- [ ] Clear is_homing, set has_homed
+- [ ] Send `event type=homed motor=N seq=S position=0`
 
 ---
 
-## Phase 7: Monitoring System
+## Phase 7: Error Handling & Recovery
 
-### 7.1 Monitor Configuration
-- [ ] Create `libCutter/inc/Monitor.h`
-  - `MonitorType` enum
-  - `MonitorConfig` struct
-- [ ] Create `libCutter/src/MonitorManager.cpp`
-  - Monitor storage array
-  - Add/remove monitor functions
+### 7.1 Enter Error State
+- [ ] `EnterError(code, message)` method
+- [ ] Transition to ERROR state
+- [ ] Stop all motors
+- [ ] Apply on_error values to all digital outputs
+- [ ] Stop PWM/H-Bridge where stop_on_error=1
+- [ ] Send `event type=error code=N message="..."`
 
-### 7.2 Monitor Commands
-- [ ] Add to MonitorManager.cpp:
-  - `monitor_digital` - Digital input changes
-  - `monitor_analog` - Analog polling
-  - `monitor_threshold` - Threshold crossing
-  - `unmonitor` - Remove monitor
-  - `list_monitors` - List active monitors
-
-### 7.3 Monitor Processing
-- [ ] Poll monitors in Update()
-- [ ] Check digital changes
-- [ ] Check polling intervals
-- [ ] Check threshold crossings
-- [ ] Generate appropriate events
-- [ ] Trigger errors/stops as configured
-
----
-
-## Phase 8: Error Handling & Recovery
-
-### 8.1 Error Handler
-- [ ] Create `libCutter/inc/ErrorHandler.h`
-  - `CutterError` enum with all error codes
-  - Error state structure
-- [ ] Create `libCutter/src/ErrorHandler.cpp`
-  - Enter error state function
-  - Error message formatting
-  - Error code to string mapping
-
-### 8.2 Error Triggers
-- [ ] Error input pin triggering
-- [ ] Analog threshold triggering
-- [ ] End stop triggering
+### 7.2 Error Triggers
+- [ ] Digital input error_trigger
+- [ ] Analog input error_threshold
+- [ ] End stop activated outside homing
 - [ ] Motor fault detection
-- [ ] Supply voltage monitoring
 - [ ] HLFB error states
 
-### 8.3 Error Response
-- [ ] Apply on_error values to digital outputs
-- [ ] Stop PWM if configured
-- [ ] Disable motors
-- [ ] Clear pending commands
-- [ ] Generate error event
+### 7.3 Manual Error
+- [ ] `emergency_stop [message="reason"]` - enter error state manually
 
-### 8.4 Recovery
-- [ ] Implement reset command
-- [ ] Increment epoch on reset
-- [ ] Reset sequence counter
+### 7.4 Recovery
+- [ ] `reset` command
+- [ ] Increment epoch
+- [ ] Reset sequence counter to 0
+- [ ] Clear error state
 - [ ] Transition to CONNECTED state
-- [ ] Allow reconfiguration
+- [ ] All pins/motors marked unconfigured (or just disabled?)
 
 ---
 
-## Phase 9: Examples & Testing
+## Phase 8: Examples & Testing
 
-### 9.1 Basic USB Example
+### 8.1 Basic USB Example
 - [ ] Create `libCutter/examples/BasicUsb/BasicUsb.cpp`
-  - Minimal setup
-  - USB serial connection
-  - Echo commands for testing
+  - Initialize SysManager
+  - Initialize Cutter with ConnectorUsb
+  - Main loop calls Update()
 
-### 9.2 Ethernet Server Example
+### 8.2 Ethernet Server Example
 - [ ] Create `libCutter/examples/EthernetServer/EthernetServer.cpp`
-  - TCP server setup
-  - Client connection handling
-  - Command processing
+  - Configure static IP or DHCP
+  - Open TCP server on port
+  - Accept connections
+  - Initialize Cutter with client
 
-### 9.3 Full System Example
+### 8.3 Full System Example
 - [ ] Create `libCutter/examples/FullSystem/FullSystem.cpp`
-  - Complete machine configuration
-  - Multiple motors
-  - End stops
-  - Digital I/O
-  - Analog monitoring
+  - Configure 2 ClearPath motors
+  - Configure end stops
+  - Configure digital I/O
+  - Configure analog input with thresholds
+  - Demonstrate homing sequence
+  - Demonstrate move with completion
 
-### 9.4 Host-Side Test Scripts
-- [ ] Python test script for serial communication
-- [ ] Test script for each command category
-- [ ] Stress test for sequence handling
+### 8.4 Python Test Scripts
+- [ ] Create `test/test_basic.py` - ping, version, state
+- [ ] Create `test/test_pins.py` - digital/analog config and control
+- [ ] Create `test/test_motors.py` - motor config, moves, completion
+- [ ] Create `test/test_errors.py` - error triggers, recovery
+- [ ] Create `test/test_stress.py` - sequence handling under load
 
 ---
 
@@ -290,58 +269,42 @@
 
 ### Static Allocation Pattern
 ```cpp
-// All arrays are fixed size
-PinConfiguration pin_configs[MAX_DIGITAL_PINS];
-MotorConfiguration motor_configs[MAX_MOTORS];
-MonitorConfig monitors[MAX_MONITORS];
+// All arrays are fixed size, no malloc
+PinState pins_[NUM_PINS];        // 13 pins
+MotorState motors_[NUM_MOTORS];  // 4 motors
 
 // Strings use fixed buffers
-char command_buffer[MAX_COMMAND_LENGTH];
-char response_buffer[MAX_RESPONSE_LENGTH];
+char line_buffer_[MAX_COMMAND_LENGTH];
+char response_buffer_[MAX_RESPONSE_LENGTH];
 ```
 
 ### Parser Pattern (No malloc)
 ```cpp
 bool CommandParser::Parse(const char* line, ParsedCommand* cmd) {
-    // Zero-initialize output struct
     memset(cmd, 0, sizeof(ParsedCommand));
-
-    // Tokenize in-place using indices
-    size_t pos = 0;
-    // ... parse into fixed arrays
+    // Tokenize using indices into line
+    // Copy tokens into cmd->name, cmd->params[].key, cmd->params[].value
+    return true;
 }
 ```
 
-### Response Pattern
-```cpp
-ResponseWriter response(response_buffer, sizeof(response_buffer));
-response.Ok()
-    .Param("motor", motor_id)
-    .Param("position", position)
-    .Send(serial);
-```
-
-### Update Loop Pattern
+### Check Pattern
 ```cpp
 void CutterController::Update() {
-    // 1. Read available input
-    ReadInput();
+    uint32_t now = Milliseconds();
 
-    // 2. Parse complete lines
-    if (HasCompleteLine()) {
-        ProcessCommand();
+    // ... read input, parse commands ...
+
+    for (uint8_t i = 0; i < NUM_PINS; i++) {
+        if (pins_[i].mode != PinMode::UNCONFIGURED) {
+            pins_[i].Check(now, this);
+        }
     }
 
-    // 3. Check motor completion
-    CheckMotorCompletion();
-
-    // 4. Check monitors
-    CheckMonitors();
-
-    // 5. Check timeouts
-    CheckTimeouts();
-
-    // 6. Send pending responses
-    FlushOutput();
+    for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+        if (motors_[i].type != MotorType::UNCONFIGURED) {
+            motors_[i].Check(now, this);
+        }
+    }
 }
 ```
