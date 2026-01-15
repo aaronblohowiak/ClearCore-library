@@ -83,17 +83,27 @@
 
 ## Phase 3: Pin State & Configuration
 
-### 3.1 Pin State Structure
+### 3.1 Pin State Structure (Tagged Union)
 - [ ] Create `libCutter/inc/PinState.h`
   - `PinMode` enum
-  - `PinState` struct with all config + runtime fields
-  - `Check()` method declaration
-  - `Read()` and `Write()` method declarations
+  - Type-specific state structs:
+    - `DigitalInState` (invert, error_trigger, report_changes, last_value)
+    - `DigitalOutState` (max_raised_ms, on_error, current_value, raised_at_ms)
+    - `AnalogInState` (thresholds, report_interval, last_value, etc.)
+    - `PwmState` (stop_on_error, duty, frequency)
+    - `HBridgeState` (stop_on_error, value, tone state)
+    - `EndStopState` (motor_index, direction, active_low, is_triggered)
+  - `PinSlot` struct with mode + pin_index + union of above
+  - Method declarations: `Check()`, `ApplyErrorState()`, `Read()`, `Write()`
 - [ ] Create `libCutter/src/PinState.cpp`
-  - `Check()` implementation (see design doc)
-  - `Read()` - read from ClearCore connector
-  - `Write()` - write to ClearCore connector
-  - `ApplyErrorState()` - apply on_error value
+  - `namespace PinCheck` with type-specific functions:
+    - `DigitalIn()` - change detection, error triggers
+    - `DigitalOut()` - timeout handling
+    - `AnalogIn()` - threshold checks, interval reporting
+    - `EndStop()` - homing coordination, unexpected activation
+    - `HBridge()` - tone timeout
+  - `PinSlot::Check()` - dispatches to type-specific function
+  - `PinSlot::ApplyErrorState()` - apply on_error for outputs
 
 ### 3.2 Pin Configuration Commands
 - [ ] Add to `PinCommands.cpp`:
@@ -270,7 +280,7 @@
 ### Static Allocation Pattern
 ```cpp
 // All arrays are fixed size, no malloc
-PinState pins_[NUM_PINS];        // 13 pins
+PinSlot pins_[NUM_PINS];         // 13 pins (tagged union)
 MotorState motors_[NUM_MOTORS];  // 4 motors
 
 // Strings use fixed buffers
@@ -278,33 +288,60 @@ char line_buffer_[MAX_COMMAND_LENGTH];
 char response_buffer_[MAX_RESPONSE_LENGTH];
 ```
 
-### Parser Pattern (No malloc)
+### Tagged Union Pattern
 ```cpp
-bool CommandParser::Parse(const char* line, ParsedCommand* cmd) {
-    memset(cmd, 0, sizeof(ParsedCommand));
-    // Tokenize using indices into line
-    // Copy tokens into cmd->name, cmd->params[].key, cmd->params[].value
-    return true;
+struct PinSlot {
+    PinMode mode;
+    uint8_t pin_index;
+    union {
+        DigitalInState digital_in;
+        DigitalOutState digital_out;
+        AnalogInState analog_in;
+        // ... etc
+    };
+};
+
+// Type-specific check functions in namespace
+namespace PinCheck {
+    void DigitalIn(PinSlot* slot, uint32_t now, CutterController* ctrl);
+    void DigitalOut(PinSlot* slot, uint32_t now, CutterController* ctrl);
+    // ... etc
+}
+
+// Dispatcher
+void PinSlot::Check(uint32_t now, CutterController* ctrl) {
+    switch (mode) {
+        case PinMode::DIGITAL_IN: PinCheck::DigitalIn(this, now, ctrl); break;
+        // ... etc
+    }
 }
 ```
 
-### Check Pattern
+### Timing Pattern (Rollover-Safe)
+```cpp
+// Use subtraction for elapsed time - handles uint32_t rollover correctly
+uint32_t start = Milliseconds();
+// ... later ...
+if ((Milliseconds() - start) >= timeout_ms) {
+    // Timeout elapsed
+}
+```
+
+### Main Loop Pattern
 ```cpp
 void CutterController::Update() {
     uint32_t now = Milliseconds();
 
-    // ... read input, parse commands ...
+    // Read/parse input...
 
+    // Each configured object checks itself
     for (uint8_t i = 0; i < NUM_PINS; i++) {
-        if (pins_[i].mode != PinMode::UNCONFIGURED) {
-            pins_[i].Check(now, this);
-        }
+        pins_[i].Check(now, this);  // No-op if UNCONFIGURED
+    }
+    for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+        motors_[i].Check(now, this);
     }
 
-    for (uint8_t i = 0; i < NUM_MOTORS; i++) {
-        if (motors_[i].type != MotorType::UNCONFIGURED) {
-            motors_[i].Check(now, this);
-        }
-    }
+    FlushOutput();
 }
 ```
