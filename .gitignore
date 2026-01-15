@@ -38,3 +38,4 @@ jlink.*
 Debug/
 Release/
 .vscode
+libCutter/build/
