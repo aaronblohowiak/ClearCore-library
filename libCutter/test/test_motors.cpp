@@ -295,3 +295,161 @@ TEST_F(MotorTest, NoFaultWhenMotorHealthy) {
     EXPECT_FALSE(serial.HasEvent("error"));
     EXPECT_NE(ctrl->GetState(), State::ERROR);
 }
+
+// === Per-Move Velocity/Acceleration Tests ===
+
+TEST_F(MotorTest, MoveWithVelOverride) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Move with lower velocity
+    serial.SendLine("move motor=0 steps=1000 vel=5000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, MoveWithAccelOverride) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Move with lower acceleration
+    serial.SendLine("move motor=0 steps=1000 accel=50000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, MoveWithBothOverrides) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Move with both overrides
+    serial.SendLine("move motor=0 steps=1000 vel=5000 accel=25000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+TEST_F(MotorTest, MoveVelExceedsMax) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to exceed velocity limit
+    serial.SendLine("move motor=0 steps=1000 vel=15000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=306"));  // EXCEEDS_LIMIT
+    EXPECT_TRUE(serial.HasOutput("vel exceeds"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, MoveAccelExceedsMax) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to exceed acceleration limit
+    serial.SendLine("move motor=0 steps=1000 accel=150000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=306"));  // EXCEEDS_LIMIT
+    EXPECT_TRUE(serial.HasOutput("accel exceeds"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, MoveVelocityWithAccelOverride) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Velocity move with acceleration override
+    serial.SendLine("move_velocity motor=0 velocity=5000 accel=25000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, MoveVelocityExceedsMax) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Try to exceed velocity limit on velocity move
+    serial.SendLine("move_velocity motor=0 velocity=15000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=306"));  // EXCEEDS_LIMIT
+    EXPECT_TRUE(serial.HasOutput("velocity exceeds"));
+}
+
+TEST_F(MotorTest, MoveVelocityNegativeWithinMax) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Negative velocity within max (magnitude check)
+    serial.SendLine("move_velocity motor=0 velocity=-8000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+TEST_F(MotorTest, MoveVelocityNegativeExceedsMax) {
+    serial.SendLine("configure_stepper motor=0 vel_max=10000 accel_max=100000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Negative velocity exceeds max (magnitude check)
+    serial.SendLine("move_velocity motor=0 velocity=-15000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=306"));  // EXCEEDS_LIMIT
+}

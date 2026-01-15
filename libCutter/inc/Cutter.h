@@ -263,7 +263,21 @@ struct MotorSlot {
     -> move motor=0 steps=1000 seq=1
     <- ok seq=1
     <- event type=done motor=0 seq=1 position=1000
+    -> move motor=0 steps=500 vel=5000 accel=25000 seq=2  // per-move overrides
+    <- ok seq=2
+    <- event type=done motor=0 seq=2 position=1500
     \endcode
+
+    \par Per-Move Velocity/Acceleration
+    The move and move_velocity commands accept optional vel and accel parameters
+    to override the motor's configured limits for that move only. These values
+    must be less than or equal to the motor's configured vel_max and accel_max:
+    \code
+    move motor=0 steps=1000 vel=5000 accel=25000  // slower move
+    move_velocity motor=0 velocity=3000 accel=10000  // slower accel to target vel
+    \endcode
+    If vel or accel exceeds the motor's configured maximum, an EXCEEDS_LIMIT
+    error (code 306) is returned and no motion occurs.
 **/
 class Controller {
 public:

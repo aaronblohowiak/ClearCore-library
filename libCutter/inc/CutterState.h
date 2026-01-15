@@ -65,6 +65,7 @@ enum class ErrorCode : uint32_t {
     MOTOR_NOT_READY = 303,
     HLFB_TIMEOUT = 304,
     SOFT_LIMIT = 305,
+    EXCEEDS_LIMIT = 306,    ///< Per-move vel/accel exceeds motor max
 
     // System errors (400-499)
     INTERNAL_ERROR = 400,

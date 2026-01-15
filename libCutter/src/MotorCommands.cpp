@@ -257,6 +257,22 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
 
     if (!CheckSoftLimits(ctrl, cmd, slot, target)) return;
 
+    // Per-move velocity/acceleration overrides (must be <= motor max)
+    int32_t vel = cmd.GetIntOr("vel", slot->vel_max);
+    int32_t accel = cmd.GetIntOr("accel", slot->accel_max);
+
+    if (vel > slot->vel_max) {
+        SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "vel exceeds motor vel_max");
+        return;
+    }
+    if (accel > slot->accel_max) {
+        SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "accel exceeds motor accel_max");
+        return;
+    }
+
+    // Apply per-move parameters
+    CutterHal::SetMotorParams(slot->motor_index, vel, accel);
+
     slot->moving = true;
     slot->move_seq = cmd.seq;
 
@@ -265,6 +281,9 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     } else {
         CutterHal::MoveAbsolute(slot->motor_index, position);
     }
+
+    // Restore motor defaults after starting move
+    CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -298,9 +317,29 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    // Validate velocity magnitude against motor max
+    int32_t vel_magnitude = velocity < 0 ? -velocity : velocity;
+    if (vel_magnitude > slot->vel_max) {
+        SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "velocity exceeds motor vel_max");
+        return;
+    }
+
+    // Optional acceleration override (must be <= motor max)
+    int32_t accel = cmd.GetIntOr("accel", slot->accel_max);
+    if (accel > slot->accel_max) {
+        SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "accel exceeds motor accel_max");
+        return;
+    }
+
+    // Apply per-move acceleration
+    CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, accel);
+
     slot->moving = true;
     slot->move_seq = cmd.seq;
     CutterHal::MoveVelocity(slot->motor_index, velocity);
+
+    // Restore motor defaults
+    CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
