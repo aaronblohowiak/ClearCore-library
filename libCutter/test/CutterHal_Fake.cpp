@@ -24,6 +24,24 @@ bool ReadDigitalPin(uint8_t pin) {
     return false;
 }
 
+bool InputRisen(uint8_t pin) {
+    if (pin < 13) {
+        bool risen = g_fake.edge_risen[pin];
+        g_fake.edge_risen[pin] = false;  // Clear-on-read
+        return risen;
+    }
+    return false;
+}
+
+bool InputFallen(uint8_t pin) {
+    if (pin < 13) {
+        bool fallen = g_fake.edge_fallen[pin];
+        g_fake.edge_fallen[pin] = false;  // Clear-on-read
+        return fallen;
+    }
+    return false;
+}
+
 void WriteDigitalPin(uint8_t pin, bool value) {
     if (pin < 13) {
         g_fake.digital_pins[pin] = value;

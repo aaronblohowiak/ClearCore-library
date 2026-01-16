@@ -62,14 +62,36 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
 
     if (!CheckPinAvailable(ctrl, cmd, pin)) return;
 
+    // Parse report_edges parameter
+    EdgeMode edge_mode = EdgeMode::NONE;
+    const char* edges_str = cmd.GetString("report_edges");
+    if (edges_str) {
+        if (strcmp(edges_str, "rising") == 0) {
+            edge_mode = EdgeMode::RISING;
+        } else if (strcmp(edges_str, "falling") == 0) {
+            edge_mode = EdgeMode::FALLING;
+        } else if (strcmp(edges_str, "both") == 0) {
+            edge_mode = EdgeMode::BOTH;
+        } else if (strcmp(edges_str, "none") != 0) {
+            SendError(ctrl, cmd, ErrorCode::INVALID_PARAM,
+                     "report_edges must be none, rising, falling, or both");
+            return;
+        }
+    }
+
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::DIGITAL_IN;
     slot->digital_in.report_changes = cmd.GetBoolOr("report_changes", false);
     slot->digital_in.invert = cmd.GetBoolOr("invert", false);
     slot->digital_in.error_trigger_enabled = cmd.GetBoolOr("error_trigger", false);
     slot->digital_in.error_trigger_value = cmd.GetBoolOr("error_value", true);
+    slot->digital_in.report_edges = edge_mode;
     bool raw_val = CutterHal::ReadDigitalPin(slot->pin_index);
     slot->digital_in.last_value = slot->digital_in.invert ? !raw_val : raw_val;
+
+    // Clear any pending edge flags
+    CutterHal::InputRisen(static_cast<uint8_t>(pin));
+    CutterHal::InputFallen(static_cast<uint8_t>(pin));
 
     ctrl->Response().Ok();
     if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);

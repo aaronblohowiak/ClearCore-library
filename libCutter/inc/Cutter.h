@@ -122,6 +122,16 @@ enum class HomingState : uint8_t {
 };
 
 /**
+    \brief Edge reporting modes for digital input
+**/
+enum class EdgeMode : uint8_t {
+    NONE = 0,     ///< No edge events
+    RISING = 1,   ///< Report rising edges only
+    FALLING = 2,  ///< Report falling edges only
+    BOTH = 3      ///< Report both rising and falling edges
+};
+
+/**
     \brief Digital input runtime state
 **/
 struct DigitalInState {
@@ -130,6 +140,7 @@ struct DigitalInState {
     bool invert;                ///< Invert the pin value before processing
     bool error_trigger_enabled; ///< Enter error state when trigger value seen
     bool error_trigger_value;   ///< Value that triggers error (after invert)
+    EdgeMode report_edges;      ///< Edge event reporting mode
 };
 
 /**

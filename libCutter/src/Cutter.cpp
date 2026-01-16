@@ -246,6 +246,39 @@ void Controller::CheckPins() {
                         .Param("value", val);
                     SendResponse();
                 }
+
+                // Check for edge events (using hardware edge detection)
+                if (pin.digital_in.report_edges != EdgeMode::NONE) {
+                    bool risen = CutterHal::InputRisen(pin.pin_index);
+                    bool fallen = CutterHal::InputFallen(pin.pin_index);
+
+                    // Apply invert to edge direction
+                    if (pin.digital_in.invert) {
+                        bool tmp = risen;
+                        risen = fallen;
+                        fallen = tmp;
+                    }
+
+                    if (risen && (pin.digital_in.report_edges == EdgeMode::RISING ||
+                                  pin.digital_in.report_edges == EdgeMode::BOTH)) {
+                        m_response.Event("edge")
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("direction", "rising")
+                            .Param("value", true);
+                        SendResponse();
+                    }
+                    if (fallen && (pin.digital_in.report_edges == EdgeMode::FALLING ||
+                                   pin.digital_in.report_edges == EdgeMode::BOTH)) {
+                        m_response.Event("edge")
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("direction", "falling")
+                            .Param("value", false);
+                        SendResponse();
+                    }
+                }
+
+                // Update last_value for next iteration (even if not reporting changes)
+                pin.digital_in.last_value = val;
                 break;
             }
 

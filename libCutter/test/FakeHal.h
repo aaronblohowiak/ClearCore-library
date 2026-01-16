@@ -19,6 +19,9 @@
 struct FakeHalState {
     // === Pin State ===
     bool digital_pins[13] = {};           // Current digital pin values
+    bool digital_pins_last[13] = {};      // Previous values for edge detection
+    bool edge_risen[13] = {};             // Rising edge detected (clear-on-read)
+    bool edge_fallen[13] = {};            // Falling edge detected (clear-on-read)
     int digital_pin_writes[13] = {};      // Write count per pin (for verification)
     int16_t analog_pins[4] = {};          // Analog values for pins 9-12
     uint16_t pwm_duty[6] = {};            // PWM duty for pins 0-5
@@ -97,14 +100,32 @@ struct FakeHalState {
     }
 
     /**
+     * @brief Set digital pin value and detect edges
+     *
+     * Sets the pin value and updates edge detection flags.
+     * @param pin Pin index
+     * @param value New value
+     */
+    void SetDigitalPin(uint8_t pin, bool value) {
+        if (pin < 13) {
+            bool old_val = digital_pins[pin];
+            digital_pins[pin] = value;
+            if (!old_val && value) {
+                edge_risen[pin] = true;
+            }
+            if (old_val && !value) {
+                edge_fallen[pin] = true;
+            }
+        }
+    }
+
+    /**
      * @brief Set end stop / digital input state
      * @param pin Pin index
      * @param active Active state
      */
     void TriggerEndStop(uint8_t pin, bool active) {
-        if (pin < 13) {
-            digital_pins[pin] = active;
-        }
+        SetDigitalPin(pin, active);
     }
 
     /**
@@ -206,6 +227,7 @@ extern FakeHalState g_fake;
 #define RESET_HAL()             g_fake.Reset()
 #define ADVANCE_TIME(ms)        g_fake.AdvanceTime(ms)
 #define SET_PIN(pin, val)       g_fake.digital_pins[pin] = (val)
+#define SET_PIN_EDGE(pin, val)  g_fake.SetDigitalPin(pin, val)  // Sets pin with edge detection
 #define GET_PIN(pin)            g_fake.digital_pins[pin]
 #define SET_ANALOG(pin, val)    g_fake.SetAnalogValue(pin, val)
 #define COMPLETE_MOVE(motor)    g_fake.CompleteMotorMove(motor)

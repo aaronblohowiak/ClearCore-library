@@ -25,6 +25,26 @@ namespace CutterHal {
 bool ReadDigitalPin(uint8_t pin);
 
 /**
+    \brief Check if pin had rising edge since last check
+
+    Clear-on-read flag - returns true once per rising edge.
+
+    \param[in] pin Pin index (0-12)
+    \return true if rising edge detected since last call
+**/
+bool InputRisen(uint8_t pin);
+
+/**
+    \brief Check if pin had falling edge since last check
+
+    Clear-on-read flag - returns true once per falling edge.
+
+    \param[in] pin Pin index (0-12)
+    \return true if falling edge detected since last call
+**/
+bool InputFallen(uint8_t pin);
+
+/**
     \brief Write digital pin state
 
     \param[in] pin Pin index (0-5 for outputs)

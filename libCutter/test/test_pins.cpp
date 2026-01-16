@@ -717,3 +717,142 @@ TEST_F(PinTest, DifferentPinsCanBeConfigured) {
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_FALSE(serial.HasOutput("error"));
 }
+
+// === Edge Detection Tests ===
+
+TEST_F(PinTest, EdgeDetectionRising) {
+    // Configure pin with rising edge reporting
+    serial.SendLine("configure_digital_in pin=6 report_edges=rising");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Simulate rising edge
+    SET_PIN_EDGE(6, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("edge"));
+    EXPECT_TRUE(serial.HasOutput("pin=6"));
+    EXPECT_TRUE(serial.HasOutput("direction=rising"));
+    EXPECT_TRUE(serial.HasOutput("value=1"));
+}
+
+TEST_F(PinTest, EdgeDetectionFalling) {
+    // Start with pin high
+    SET_PIN(6, true);
+
+    // Configure pin with falling edge reporting
+    serial.SendLine("configure_digital_in pin=6 report_edges=falling");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Simulate falling edge
+    SET_PIN_EDGE(6, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("edge"));
+    EXPECT_TRUE(serial.HasOutput("direction=falling"));
+    EXPECT_TRUE(serial.HasOutput("value=0"));
+}
+
+TEST_F(PinTest, EdgeDetectionBoth) {
+    // Configure pin with both edges reporting
+    serial.SendLine("configure_digital_in pin=6 report_edges=both");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Simulate rising edge
+    SET_PIN_EDGE(6, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("edge"));
+    EXPECT_TRUE(serial.HasOutput("direction=rising"));
+    serial.ClearOutput();
+
+    // Simulate falling edge
+    SET_PIN_EDGE(6, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("edge"));
+    EXPECT_TRUE(serial.HasOutput("direction=falling"));
+}
+
+TEST_F(PinTest, EdgeDetectionNone) {
+    // Configure pin with no edge reporting (default)
+    serial.SendLine("configure_digital_in pin=6 report_edges=none");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Simulate rising edge
+    SET_PIN_EDGE(6, true);
+    ctrl->Update();
+
+    // Should not get edge event
+    EXPECT_FALSE(serial.HasEvent("edge"));
+}
+
+TEST_F(PinTest, EdgeDetectionRisingIgnoresFalling) {
+    // Start with pin high
+    SET_PIN(6, true);
+
+    // Configure pin with rising edge only
+    serial.SendLine("configure_digital_in pin=6 report_edges=rising");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Simulate falling edge - should be ignored
+    SET_PIN_EDGE(6, false);
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("edge"));
+}
+
+TEST_F(PinTest, EdgeDetectionWithInvert) {
+    // Configure pin with rising edge reporting and invert
+    serial.SendLine("configure_digital_in pin=6 report_edges=rising invert=1");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Start high (which appears low due to invert)
+    SET_PIN(6, true);
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Simulate falling edge on hardware - appears as rising due to invert
+    SET_PIN_EDGE(6, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("edge"));
+    EXPECT_TRUE(serial.HasOutput("direction=rising"));
+}
+
+TEST_F(PinTest, EdgeDetectionInvalidMode) {
+    serial.SendLine("configure_digital_in pin=6 report_edges=invalid");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("report_edges must be"));
+}
+
+TEST_F(PinTest, EdgeDetectionClearOnRead) {
+    // Configure pin with rising edge reporting
+    serial.SendLine("configure_digital_in pin=6 report_edges=rising");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Simulate rising edge
+    SET_PIN_EDGE(6, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("edge"));
+    serial.ClearOutput();
+
+    // Next update should NOT emit edge again (clear-on-read)
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("edge"));
+}
