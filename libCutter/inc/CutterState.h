@@ -49,6 +49,7 @@ enum class ErrorCode : uint32_t {
     INVALID_STATE = 103,
     EPOCH_MISMATCH = 104,
     STALE_SEQ = 105,        ///< Sequence number is stale (lower than previously seen)
+    INPUT_OVERFLOW = 106,   ///< Command line exceeded input buffer
 
     // Pin errors (200-299)
     INVALID_PIN = 200,

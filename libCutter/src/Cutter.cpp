@@ -11,6 +11,7 @@ namespace Cutter {
 Controller::Controller(ISerial* serial)
     : m_serial(serial)
     , m_inputPos(0)
+    , m_inputOverflow(false)
     , m_responseBuffer{}
     , m_response(m_responseBuffer, sizeof(m_responseBuffer))
     , m_nextSeq(1)
@@ -66,8 +67,16 @@ void Controller::ProcessInput() {
         }
 
         if (c == '\n' || c == '\r') {
-            // End of line - process command
-            if (m_inputPos > 0) {
+            // End of line - process command or report overflow
+            if (m_inputOverflow) {
+                // Line exceeded buffer - report error to host
+                m_response.Error(static_cast<uint32_t>(ErrorCode::INPUT_OVERFLOW),
+                               "Command too long");
+                m_response.Param("max_length", static_cast<int32_t>(MAX_COMMAND_LENGTH - 1));
+                SendResponse();
+                m_inputOverflow = false;
+                m_inputPos = 0;
+            } else if (m_inputPos > 0) {
                 m_inputBuffer[m_inputPos] = '\0';
 
                 ParsedCommand cmd;
@@ -80,8 +89,10 @@ void Controller::ProcessInput() {
             }
         } else if (m_inputPos < sizeof(m_inputBuffer) - 1) {
             m_inputBuffer[m_inputPos++] = static_cast<char>(c);
+        } else {
+            // Buffer overflow - mark and continue discarding until newline
+            m_inputOverflow = true;
         }
-        // Overflow: continue reading but don't store
     }
 }
 

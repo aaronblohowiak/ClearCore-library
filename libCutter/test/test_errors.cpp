@@ -293,3 +293,56 @@ TEST_F(ErrorTest, SeqWrapAroundAccepted) {
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
 }
+
+// === Input Buffer Overflow ===
+
+TEST_F(ErrorTest, InputOverflowReportsError) {
+    // Create a command longer than MAX_COMMAND_LENGTH (512)
+    std::string long_cmd = "ping param=";
+    long_cmd.append(600, 'x');  // Add 600 'x' characters
+
+    serial.SendLine(long_cmd.c_str());
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=106"));  // INPUT_OVERFLOW
+    EXPECT_TRUE(serial.HasOutput("Command too long"));
+    EXPECT_TRUE(serial.HasOutput("max_length=511"));
+}
+
+TEST_F(ErrorTest, InputOverflowRecovery) {
+    // Send overflow command
+    std::string long_cmd = "ping param=";
+    long_cmd.append(600, 'x');
+    serial.SendLine(long_cmd.c_str());
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("error"));
+    serial.ClearOutput();
+
+    // Next normal command should work fine
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+TEST_F(ErrorTest, MaxValidCommandFits) {
+    // Test that the worst-case valid command fits in the buffer
+    // configure_stepper with all parameters at max values
+    std::string worst_case =
+        "configure_stepper motor=0 vel_max=2147483647 accel_max=2147483647 "
+        "enable_priority=255 home_on_enable=false homing_direction=-1 "
+        "homing_seek_velocity=2147483647 homing_latch_velocity=2147483647 "
+        "homing_backoff=2147483647 limit_neg_pin=6 limit_pos_pin=7 "
+        "soft_limits=true soft_min=-2147483648 soft_max=2147483647 "
+        "epoch=1 seq=1";
+
+    // Verify it's under 512 bytes
+    EXPECT_LT(worst_case.length(), MAX_COMMAND_LENGTH);
+
+    serial.SendLine(worst_case.c_str());
+    ctrl->Update();
+
+    // Should get 'ok', not overflow error
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_FALSE(serial.HasOutput("code=106"));
+}

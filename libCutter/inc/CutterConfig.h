@@ -16,7 +16,9 @@ namespace Cutter {
 // === Buffer Sizes ===
 
 /// Maximum length of a command line (including null terminator)
-constexpr size_t MAX_COMMAND_LENGTH = 256;
+/// Sized to handle worst-case valid commands (e.g., configure_stepper with all
+/// parameters at max int32 values is ~345 bytes)
+constexpr size_t MAX_COMMAND_LENGTH = 512;
 
 /// Maximum length of a parameter key
 constexpr size_t MAX_KEY_LENGTH = 32;

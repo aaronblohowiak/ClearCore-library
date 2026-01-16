@@ -697,6 +697,7 @@ Events are sent asynchronously when certain conditions occur.
 | 103 | INVALID_STATE | Command not valid in current state |
 | 104 | EPOCH_MISMATCH | Command epoch doesn't match current |
 | 105 | STALE_SEQ | Sequence number already seen |
+| 106 | INPUT_OVERFLOW | Command line exceeded 511 character limit |
 
 ### Pin Errors (200-299)
 

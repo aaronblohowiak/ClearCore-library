@@ -454,6 +454,7 @@ private:
     ISerial* m_serial;
     char m_inputBuffer[MAX_COMMAND_LENGTH];
     size_t m_inputPos;
+    bool m_inputOverflow;           ///< True if current line exceeded buffer
 
     // State
     StateMachine m_stateMachine;
