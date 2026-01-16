@@ -65,6 +65,21 @@
       <Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value>
       <Value>../inc</Value>
       <Value>../../libClearCore/inc</Value>
+      <Value>../../libClearCore/config</Value>
+      <Value>../../libClearCore/hal/include</Value>
+      <Value>../../libClearCore/hal/utils/include</Value>
+      <Value>../../libClearCore/hpl/core</Value>
+      <Value>../../libClearCore/hpl/gclk</Value>
+      <Value>../../libClearCore/hpl/mclk</Value>
+      <Value>../../libClearCore/hpl/port</Value>
+      <Value>../../libClearCore/hpl/usb</Value>
+      <Value>../../libClearCore/hri</Value>
+      <Value>../../libClearCore/usb</Value>
+      <Value>../../libClearCore/usb/class/cdc</Value>
+      <Value>../../libClearCore/usb/class/cdc/device</Value>
+      <Value>../../libClearCore/usb/device</Value>
+      <Value>../../LwIP/LwIP/port/include</Value>
+      <Value>../../LwIP/LwIP/src/include</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize most (-O3)</armgcc.compiler.optimization.level>
@@ -90,6 +105,21 @@
       <Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value>
       <Value>../inc</Value>
       <Value>../../libClearCore/inc</Value>
+      <Value>../../libClearCore/config</Value>
+      <Value>../../libClearCore/hal/include</Value>
+      <Value>../../libClearCore/hal/utils/include</Value>
+      <Value>../../libClearCore/hpl/core</Value>
+      <Value>../../libClearCore/hpl/gclk</Value>
+      <Value>../../libClearCore/hpl/mclk</Value>
+      <Value>../../libClearCore/hpl/port</Value>
+      <Value>../../libClearCore/hpl/usb</Value>
+      <Value>../../libClearCore/hri</Value>
+      <Value>../../libClearCore/usb</Value>
+      <Value>../../libClearCore/usb/class/cdc</Value>
+      <Value>../../libClearCore/usb/class/cdc/device</Value>
+      <Value>../../libClearCore/usb/device</Value>
+      <Value>../../LwIP/LwIP/port/include</Value>
+      <Value>../../LwIP/LwIP/src/include</Value>
     </ListValues>
   </armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
@@ -147,6 +177,21 @@
       <Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value>
       <Value>../inc</Value>
       <Value>../../libClearCore/inc</Value>
+      <Value>../../libClearCore/config</Value>
+      <Value>../../libClearCore/hal/include</Value>
+      <Value>../../libClearCore/hal/utils/include</Value>
+      <Value>../../libClearCore/hpl/core</Value>
+      <Value>../../libClearCore/hpl/gclk</Value>
+      <Value>../../libClearCore/hpl/mclk</Value>
+      <Value>../../libClearCore/hpl/port</Value>
+      <Value>../../libClearCore/hpl/usb</Value>
+      <Value>../../libClearCore/hri</Value>
+      <Value>../../libClearCore/usb</Value>
+      <Value>../../libClearCore/usb/class/cdc</Value>
+      <Value>../../libClearCore/usb/class/cdc/device</Value>
+      <Value>../../libClearCore/usb/device</Value>
+      <Value>../../LwIP/LwIP/port/include</Value>
+      <Value>../../LwIP/LwIP/src/include</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize most (-O3)</armgcc.compiler.optimization.level>
@@ -171,6 +216,21 @@
       <Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value>
       <Value>../inc</Value>
       <Value>../../libClearCore/inc</Value>
+      <Value>../../libClearCore/config</Value>
+      <Value>../../libClearCore/hal/include</Value>
+      <Value>../../libClearCore/hal/utils/include</Value>
+      <Value>../../libClearCore/hpl/core</Value>
+      <Value>../../libClearCore/hpl/gclk</Value>
+      <Value>../../libClearCore/hpl/mclk</Value>
+      <Value>../../libClearCore/hpl/port</Value>
+      <Value>../../libClearCore/hpl/usb</Value>
+      <Value>../../libClearCore/hri</Value>
+      <Value>../../libClearCore/usb</Value>
+      <Value>../../libClearCore/usb/class/cdc</Value>
+      <Value>../../libClearCore/usb/class/cdc/device</Value>
+      <Value>../../libClearCore/usb/device</Value>
+      <Value>../../LwIP/LwIP/port/include</Value>
+      <Value>../../LwIP/LwIP/src/include</Value>
     </ListValues>
   </armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
@@ -251,6 +311,13 @@
     <Compile Include="src\ResponseWriter.cpp">
       <SubType>compile</SubType>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\libClearCore\ClearCore.cppproj">
+      <Name>ClearCore</Name>
+      <Project>{2530d5b1-8a40-4a55-95ca-2ec0b63e2088}</Project>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(AVRSTUDIO_EXE_PATH)\\Vs\\Compiler.targets" />
 </Project>
