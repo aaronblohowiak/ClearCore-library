@@ -1,0 +1,538 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cutter Protocol Specification",
+  "version": "1.0.0",
+  "protocol_version": "1",
+
+  "primitive_types": {
+    "int8": { "signed": true, "bits": 8, "min": -128, "max": 127 },
+    "uint8": { "signed": false, "bits": 8, "min": 0, "max": 255 },
+    "int16": { "signed": true, "bits": 16, "min": -32768, "max": 32767 },
+    "uint16": { "signed": false, "bits": 16, "min": 0, "max": 65535 },
+    "int32": { "signed": true, "bits": 32, "min": -2147483648, "max": 2147483647 },
+    "uint32": { "signed": false, "bits": 32, "min": 0, "max": 4294967295 },
+    "bool": { "values": ["true", "false"], "wire_format": "string" },
+    "string": { "wire_format": "string" }
+  },
+
+  "types": {
+    "motor_index": { "base": "uint8", "min": 0, "max": 3 },
+    "pin_index": { "base": "uint8", "min": 0, "max": 12 },
+    "direction": { "base": "int8", "values": [-1, 1] },
+    "edge_mode": { "base": "string", "values": ["none", "rising", "falling", "both"] },
+    "clock_rate": { "base": "string", "values": ["low", "normal", "high"] },
+    "duty_cycle": { "base": "uint16", "min": 0, "max": 65535 },
+    "hbridge_value": { "base": "int16", "min": -32767, "max": 32767 }
+  },
+
+  "global_params": {
+    "epoch": {
+      "type": "uint32",
+      "required": false,
+      "description": "Command epoch for error detection"
+    },
+    "seq": {
+      "type": "uint32",
+      "required": false,
+      "description": "Sequence number for async correlation"
+    }
+  },
+
+  "states": {
+    "UNCONNECTED": { "value": 0, "description": "No host connection" },
+    "CONNECTED": { "value": 1, "description": "Host connected, awaiting configuration" },
+    "CONFIGURED": { "value": 2, "description": "Pins/motors configured, not enabled" },
+    "ENABLING": { "value": 3, "description": "Motors enabling (waiting for HLFB)" },
+    "READY": { "value": 4, "description": "System ready for motion" },
+    "WORKING": { "value": 5, "description": "Motion in progress" },
+    "ERROR": { "value": 6, "description": "Error state, requires reset" }
+  },
+
+  "errors": {
+    "100": { "name": "UNKNOWN_COMMAND", "description": "Command not recognized" },
+    "101": { "name": "INVALID_PARAM", "description": "Invalid parameter value" },
+    "102": { "name": "MISSING_PARAM", "description": "Required parameter missing" },
+    "103": { "name": "INVALID_STATE", "description": "Command not valid in current state" },
+    "104": { "name": "EPOCH_MISMATCH", "description": "Command epoch doesn't match current" },
+    "105": { "name": "STALE_SEQ", "description": "Sequence number already seen" },
+    "106": { "name": "INPUT_OVERFLOW", "description": "Command line exceeded buffer" },
+    "200": { "name": "INVALID_PIN", "description": "Pin index out of range" },
+    "201": { "name": "PIN_NOT_CONFIGURED", "description": "Pin not configured" },
+    "202": { "name": "PIN_CAPABILITY", "description": "Pin doesn't support requested mode" },
+    "203": { "name": "PIN_OVERCURRENT", "description": "Pin overcurrent fault" },
+    "204": { "name": "PIN_TIMEOUT", "description": "Digital output timeout" },
+    "205": { "name": "PIN_ERROR_TRIGGER", "description": "Error trigger condition met" },
+    "206": { "name": "ANALOG_THRESHOLD", "description": "Analog value outside threshold" },
+    "207": { "name": "PIN_CONFLICT", "description": "Pin already in use" },
+    "300": { "name": "INVALID_MOTOR", "description": "Motor index out of range" },
+    "301": { "name": "MOTOR_NOT_CONFIGURED", "description": "Motor not configured" },
+    "302": { "name": "MOTOR_FAULT", "description": "Motor hardware fault" },
+    "303": { "name": "MOTOR_NOT_READY", "description": "Motor not enabled" },
+    "304": { "name": "HLFB_TIMEOUT", "description": "HLFB not asserted in time" },
+    "305": { "name": "SOFT_LIMIT", "description": "Move exceeds soft limits" },
+    "306": { "name": "EXCEEDS_LIMIT", "description": "Per-move vel/accel exceeds motor max" },
+    "400": { "name": "INTERNAL_ERROR", "description": "Internal firmware error" },
+    "401": { "name": "EMERGENCY_STOP", "description": "Emergency stop activated" }
+  },
+
+  "commands": {
+    "ping": {
+      "description": "Test connection",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": []
+    },
+
+    "reset": {
+      "description": "Reset from error state",
+      "valid_states": ["ERROR"],
+      "params": {},
+      "response_params": ["epoch"]
+    },
+
+    "status": {
+      "description": "Query system status",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["state", "epoch"],
+      "conditional_params": {
+        "ERROR": ["error_code", "error_message"]
+      }
+    },
+
+    "version": {
+      "description": "Get firmware version",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["version", "protocol"]
+    },
+
+    "emergency_stop": {
+      "description": "Emergency stop all motors",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["epoch"],
+      "emits_events": ["error"]
+    },
+
+    "get_next_seq": {
+      "description": "Get next sequence number",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["next_seq"]
+    },
+
+    "configure_sdsk": {
+      "description": "Configure ClearPath-SD/SK motor",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "vel_max": { "type": "int32", "required": false, "default": 10000, "min": 1 },
+        "accel_max": { "type": "int32", "required": false, "default": 100000, "min": 1 },
+        "hlfb_timeout": { "type": "uint32", "required": false, "default": 5000, "min": 1 },
+        "enable_priority": { "type": "uint8", "required": false, "default": "motor" },
+        "home_on_enable": { "type": "bool", "required": false, "default": true },
+        "homing_direction": { "type": "direction", "required": false, "default": -1 },
+        "homing_velocity": { "type": "int32", "required": false, "default": 2000, "min": 1 },
+        "homing_torque_limit": { "type": "int32", "required": false, "default": 0, "min": 0 },
+        "soft_limits": { "type": "bool", "required": false, "default": false },
+        "soft_min": { "type": "int32", "required": false, "default": -2147483648 },
+        "soft_max": { "type": "int32", "required": false, "default": 2147483647 }
+      },
+      "response_params": ["motor"]
+    },
+
+    "configure_stepper": {
+      "description": "Configure generic stepper motor",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "vel_max": { "type": "int32", "required": false, "default": 10000, "min": 1 },
+        "accel_max": { "type": "int32", "required": false, "default": 100000, "min": 1 },
+        "enable_priority": { "type": "uint8", "required": false, "default": "motor" },
+        "home_on_enable": { "type": "bool", "required": false, "default": true },
+        "homing_direction": { "type": "direction", "required": false, "default": -1 },
+        "homing_seek_velocity": { "type": "int32", "required": false, "default": 5000, "min": 1 },
+        "homing_latch_velocity": { "type": "int32", "required": false, "default": 500, "min": 1 },
+        "homing_backoff": { "type": "int32", "required": false, "default": 200, "min": 1 },
+        "limit_neg_pin": { "type": "pin_index", "required": false },
+        "limit_pos_pin": { "type": "pin_index", "required": false },
+        "soft_limits": { "type": "bool", "required": false, "default": false },
+        "soft_min": { "type": "int32", "required": false, "default": -2147483648 },
+        "soft_max": { "type": "int32", "required": false, "default": 2147483647 }
+      },
+      "response_params": ["motor"],
+      "constraints": [
+        "if home_on_enable=true and homing_direction=-1, limit_neg_pin is required",
+        "if home_on_enable=true and homing_direction=1, limit_pos_pin is required"
+      ]
+    },
+
+    "set_motor_clock": {
+      "description": "Set global motor step clock rate",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "rate": { "type": "clock_rate", "required": true }
+      },
+      "response_params": ["rate"]
+    },
+
+    "configure_estop": {
+      "description": "Configure E-Stop pin for motor(s)",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true },
+        "motor": { "type": "motor_index", "required": true, "also_accepts": "all" },
+        "decel": { "type": "int32", "min": 1, "required": false }
+      },
+      "response_params": ["pin", "motor"]
+    },
+
+    "enable": {
+      "description": "Enable single motor",
+      "valid_states": ["CONFIGURED", "READY"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true }
+      },
+      "response_params": ["motor"],
+      "emits_events": ["homed"]
+    },
+
+    "enable_all": {
+      "description": "Enable all configured motors in priority order",
+      "valid_states": ["CONFIGURED", "READY"],
+      "params": {},
+      "response_params": ["count"],
+      "emits_events": ["homing_started", "homed", "all_homed"]
+    },
+
+    "disable": {
+      "description": "Disable motor",
+      "valid_states": ["*"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true }
+      },
+      "response_params": ["motor"]
+    },
+
+    "move": {
+      "description": "Command positional move",
+      "valid_states": ["READY", "WORKING"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "steps": { "type": "int32", "required": false, "group": "target" },
+        "position": { "type": "int32", "required": false, "group": "target" },
+        "vel": { "type": "int32", "min": 1, "required": false },
+        "accel": { "type": "int32", "min": 1, "required": false }
+      },
+      "param_groups": {
+        "target": { "one_required": true, "mutually_exclusive": true }
+      },
+      "response_params": ["motor"],
+      "emits_events": ["done", "soft_limit", "estop", "limit"]
+    },
+
+    "move_velocity": {
+      "description": "Command velocity move",
+      "valid_states": ["READY", "WORKING"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "velocity": { "type": "int32", "required": true },
+        "accel": { "type": "int32", "min": 1, "required": false }
+      },
+      "response_params": ["motor"],
+      "emits_events": ["soft_limit", "estop", "limit"]
+    },
+
+    "stop": {
+      "description": "Stop motor",
+      "valid_states": ["*"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "immediate": { "type": "bool", "required": false, "default": false }
+      },
+      "response_params": ["motor", "position"]
+    },
+
+    "home": {
+      "description": "Start homing sequence",
+      "valid_states": ["READY", "WORKING"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true }
+      },
+      "response_params": ["motor"],
+      "emits_events": ["homed"]
+    },
+
+    "set_position": {
+      "description": "Set motor position counter",
+      "valid_states": ["*"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "position": { "type": "int32", "required": true }
+      },
+      "response_params": ["motor", "position"]
+    },
+
+    "clear_alerts": {
+      "description": "Clear motor alerts",
+      "valid_states": ["*"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true }
+      },
+      "response_params": ["motor"]
+    },
+
+    "configure_digital_in": {
+      "description": "Configure pin as digital input",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true },
+        "report_changes": { "type": "bool", "required": false, "default": false },
+        "report_edges": { "type": "edge_mode", "required": false, "default": "none" },
+        "invert": { "type": "bool", "required": false, "default": false },
+        "error_trigger": { "type": "bool", "required": false, "default": false },
+        "error_value": { "type": "bool", "required": false, "default": true }
+      },
+      "response_params": ["pin"],
+      "emits_events": ["input", "edge", "error"]
+    },
+
+    "configure_digital_out": {
+      "description": "Configure pin as digital output",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true, "max": 5 },
+        "initial": { "type": "bool", "required": false, "default": false },
+        "on_error": { "type": "bool", "required": false },
+        "max_raised_ms": { "type": "uint32", "required": false, "default": 0 }
+      },
+      "response_params": ["pin"],
+      "emits_events": ["error"]
+    },
+
+    "configure_analog_in": {
+      "description": "Configure pin as analog input",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true, "min": 9, "max": 12 },
+        "error_low": { "type": "int32", "required": false },
+        "error_high": { "type": "int32", "required": false },
+        "report_interval": { "type": "uint32", "required": false, "default": 0 }
+      },
+      "response_params": ["pin"],
+      "emits_events": ["analog", "error"]
+    },
+
+    "configure_pwm": {
+      "description": "Configure pin as PWM output",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true, "max": 5 },
+        "duty": { "type": "uint32", "required": false, "default": 0, "max": 65535 },
+        "frequency": { "type": "int32", "min": 1, "required": false, "default": 1000 }
+      },
+      "response_params": ["pin"]
+    },
+
+    "configure_hbridge": {
+      "description": "Configure pin as H-Bridge output",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true, "min": 4, "max": 5 },
+        "value": { "type": "int32", "required": false, "default": 0, "min": -32767, "max": 32767 }
+      },
+      "response_params": ["pin"]
+    },
+
+    "configure_endstop": {
+      "description": "Configure pin as endstop input",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true },
+        "triggered": { "type": "int32", "required": false, "default": 0, "values": [0, 1] }
+      },
+      "response_params": ["pin"]
+    },
+
+    "read_pin": {
+      "description": "Read pin value",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true }
+      },
+      "response_params": ["pin", "value"]
+    },
+
+    "write_pin": {
+      "description": "Write digital output",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true },
+        "value": { "type": "bool", "required": true },
+        "max_ms": { "type": "uint32", "required": false }
+      },
+      "response_params": ["pin", "value"]
+    },
+
+    "set_pwm": {
+      "description": "Set PWM parameters",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true },
+        "duty": { "type": "uint32", "required": false, "max": 65535 },
+        "frequency": { "type": "int32", "min": 1, "required": false }
+      },
+      "response_params": ["pin"]
+    },
+
+    "set_hbridge": {
+      "description": "Set H-Bridge value",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true },
+        "value": { "type": "int32", "required": true, "min": -32767, "max": 32767 }
+      },
+      "response_params": ["pin"]
+    },
+
+    "start_tone": {
+      "description": "Start tone on H-Bridge pin",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true, "min": 4, "max": 5 },
+        "frequency": { "type": "int32", "min": 1, "required": true },
+        "amplitude": { "type": "int32", "required": true, "min": 0, "max": 32767 }
+      },
+      "response_params": ["pin"]
+    },
+
+    "stop_tone": {
+      "description": "Stop tone on H-Bridge pin",
+      "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
+      "params": {
+        "pin": { "type": "pin_index", "required": true }
+      },
+      "response_params": ["pin"]
+    }
+  },
+
+  "events": {
+    "done": {
+      "description": "Motor move completed",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "position": { "type": "int32" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "homed": {
+      "description": "Motor homing completed",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "homing_started": {
+      "description": "Motor homing sequence started",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "all_homed": {
+      "description": "All motors homed (enable_all complete)",
+      "params": {
+        "count": { "type": "int32" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "soft_limit": {
+      "description": "Velocity move hit soft limit",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "position": { "type": "int32" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "estop": {
+      "description": "E-Stop triggered",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "position": { "type": "int32" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "limit": {
+      "description": "Limit switch triggered",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "direction": { "type": "string", "values": ["neg", "pos"] },
+        "position": { "type": "int32" }
+      }
+    },
+    "hlfb": {
+      "description": "HLFB state changed",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "state": { "type": "int32" }
+      }
+    },
+    "input": {
+      "description": "Digital input changed",
+      "params": {
+        "pin": { "type": "pin_index" },
+        "value": { "type": "bool" }
+      }
+    },
+    "edge": {
+      "description": "Digital input edge detected",
+      "params": {
+        "pin": { "type": "pin_index" },
+        "direction": { "type": "string", "values": ["rising", "falling"] },
+        "value": { "type": "bool" }
+      }
+    },
+    "analog": {
+      "description": "Analog input report",
+      "params": {
+        "pin": { "type": "pin_index" },
+        "value": { "type": "int32" }
+      }
+    },
+    "error": {
+      "description": "Error occurred",
+      "params": {
+        "code": { "type": "uint32" },
+        "message": { "type": "string" },
+        "pin": { "type": "pin_index", "optional": true },
+        "motor": { "type": "motor_index", "optional": true }
+      }
+    }
+  },
+
+  "response_formats": {
+    "ok": {
+      "prefix": "ok",
+      "description": "Command succeeded",
+      "includes_seq": "if provided in command"
+    },
+    "error": {
+      "prefix": "error",
+      "params": ["code", "message"],
+      "description": "Command failed",
+      "includes_seq": "if provided in command"
+    },
+    "event": {
+      "prefix": "event",
+      "params": ["type"],
+      "description": "Asynchronous event"
+    }
+  }
+}
