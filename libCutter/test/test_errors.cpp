@@ -183,7 +183,7 @@ TEST_F(ErrorTest, WriteToUnconfiguredPin) {
 // === Motor Not Ready ===
 
 TEST_F(ErrorTest, MoveWithoutEnable) {
-    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -197,7 +197,7 @@ TEST_F(ErrorTest, MoveWithoutEnable) {
 
 TEST_F(ErrorTest, EmergencyStop) {
     // Configure and enable a motor
-    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
     ctrl->Update();
     serial.SendLine("enable motor=0");
     ctrl->Update();
@@ -331,7 +331,7 @@ TEST_F(ErrorTest, MaxValidCommandFits) {
     // Note: We omit epoch since we're just testing buffer size, not protocol
     std::string worst_case =
         "configure_stepper motor=0 vel_max=2147483647 accel_max=2147483647 "
-        "enable_priority=255 home_on_enable=false homing_direction=-1 "
+        "enable_priority=255 homing_mode=none homing_direction=-1 "
         "homing_seek_velocity=2147483647 homing_latch_velocity=2147483647 "
         "homing_backoff=2147483647 limit_neg_pin=6 limit_pos_pin=7 "
         "soft_limits=true soft_min=-2147483648 soft_max=2147483647";

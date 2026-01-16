@@ -632,7 +632,7 @@ void Controller::SetEnableAllId(const CommandId& id) {
 
     for (size_t i = 0; i < NUM_MOTORS; i++) {
         MotorSlot& slot = m_motors[i];
-        if (slot.type != MotorType::UNCONFIGURED && slot.home_on_enable) {
+        if (slot.type != MotorType::UNCONFIGURED && slot.homing_mode != HomingMode::NONE) {
             motors[count].index = static_cast<uint8_t>(i);
             motors[count].priority = slot.enable_priority;
             count++;

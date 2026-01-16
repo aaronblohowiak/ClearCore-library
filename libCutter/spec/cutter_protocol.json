@@ -11,7 +11,9 @@
     "edge_mode": { "type": "string", "values": ["none", "rising", "falling", "both"] },
     "clock_rate": { "type": "string", "values": ["low", "normal", "high"] },
     "duty_cycle": { "type": "uint16", "min": 0, "max": 65535 },
-    "hbridge_value": { "type": "int16", "min": -32767, "max": 32767 }
+    "hbridge_value": { "type": "int16", "min": -32767, "max": 32767 },
+    "sdsk_homing_mode": { "type": "string", "values": ["none", "msp", "limit_switch"] },
+    "stepper_homing_mode": { "type": "string", "values": ["none", "limit_switch"] }
   },
 
   "global_params": {
@@ -120,15 +122,29 @@
         "accel_max": { "type": "int32", "required": false, "default": 100000, "min": 1 },
         "hlfb_timeout": { "type": "uint32", "required": false, "default": 5000, "min": 1 },
         "enable_priority": { "type": "uint8", "required": false, "default": "motor" },
-        "home_on_enable": { "type": "bool", "required": false, "default": true },
-        "homing_direction": { "type": "direction", "required": false, "default": -1 },
-        "homing_velocity": { "type": "int32", "required": false, "default": 2000, "min": 1 },
-        "homing_torque_limit": { "type": "int32", "required": false, "default": 0, "min": 0 },
+        "homing_mode": { "type": "sdsk_homing_mode", "required": false, "default": "msp",
+          "description": "none=no homing, msp=motor homes via MSP config, limit_switch=Cutter homes using endstop" },
+        "homing_direction": { "type": "direction", "required": false, "default": -1,
+          "description": "Only used when homing_mode=limit_switch" },
+        "homing_seek_velocity": { "type": "int32", "required": false, "default": 5000, "min": 1,
+          "description": "Only used when homing_mode=limit_switch" },
+        "homing_latch_velocity": { "type": "int32", "required": false, "default": 500, "min": 1,
+          "description": "Only used when homing_mode=limit_switch" },
+        "homing_backoff": { "type": "int32", "required": false, "default": 200, "min": 1,
+          "description": "Only used when homing_mode=limit_switch" },
+        "limit_neg_pin": { "type": "pin_index", "required": false,
+          "description": "Only used when homing_mode=limit_switch and homing_direction=-1" },
+        "limit_pos_pin": { "type": "pin_index", "required": false,
+          "description": "Only used when homing_mode=limit_switch and homing_direction=1" },
         "soft_limits": { "type": "bool", "required": false, "default": false },
         "soft_min": { "type": "int32", "required": false, "default": -2147483648 },
         "soft_max": { "type": "int32", "required": false, "default": 2147483647 }
       },
-      "response_params": ["motor"]
+      "response_params": ["motor"],
+      "constraints": [
+        "if homing_mode=limit_switch and homing_direction=-1, limit_neg_pin is required",
+        "if homing_mode=limit_switch and homing_direction=1, limit_pos_pin is required"
+      ]
     },
 
     "configure_stepper": {
@@ -139,7 +155,8 @@
         "vel_max": { "type": "int32", "required": false, "default": 10000, "min": 1 },
         "accel_max": { "type": "int32", "required": false, "default": 100000, "min": 1 },
         "enable_priority": { "type": "uint8", "required": false, "default": "motor" },
-        "home_on_enable": { "type": "bool", "required": false, "default": true },
+        "homing_mode": { "type": "stepper_homing_mode", "required": false, "default": "limit_switch",
+          "description": "none=no homing, limit_switch=Cutter homes using endstop" },
         "homing_direction": { "type": "direction", "required": false, "default": -1 },
         "homing_seek_velocity": { "type": "int32", "required": false, "default": 5000, "min": 1 },
         "homing_latch_velocity": { "type": "int32", "required": false, "default": 500, "min": 1 },
@@ -152,8 +169,8 @@
       },
       "response_params": ["motor"],
       "constraints": [
-        "if home_on_enable=true and homing_direction=-1, limit_neg_pin is required",
-        "if home_on_enable=true and homing_direction=1, limit_pos_pin is required"
+        "if homing_mode=limit_switch and homing_direction=-1, limit_neg_pin is required",
+        "if homing_mode=limit_switch and homing_direction=1, limit_pos_pin is required"
       ]
     },
 

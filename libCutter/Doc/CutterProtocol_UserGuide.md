@@ -219,7 +219,7 @@ Immediately stop all motors and enter ERROR state.
 
 #### configure_sdsk
 
-Configure a ClearPath-SD/SK servo motor. Uses HLFB for position confirmation and hard-stop homing.
+Configure a ClearPath-SD/SK servo motor. Uses HLFB for position confirmation.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -228,16 +228,30 @@ Configure a ClearPath-SD/SK servo motor. Uses HLFB for position confirmation and
 | `accel_max` | int | 100000 | Maximum acceleration (steps/sec²) |
 | `hlfb_timeout` | int | 5000 | HLFB timeout in ms |
 | `enable_priority` | int | motor | Enable/home order (lower = first) |
-| `home_on_enable` | bool | true | Auto-home when enabled |
+| `homing_mode` | string | msp | Homing mode (see below) |
 | `homing_direction` | int | -1 | Homing direction (-1 or 1) |
-| `homing_velocity` | int | 2000 | Homing seek velocity |
-| `homing_torque_limit` | int | 0 | HLFB torque threshold (0 = default) |
+| `homing_seek_velocity` | int | 5000 | Fast approach velocity (limit_switch mode) |
+| `homing_latch_velocity` | int | 500 | Slow precision velocity (limit_switch mode) |
+| `homing_backoff` | int | 200 | Backoff distance after contact (limit_switch mode) |
+| `limit_neg_pin` | int | none | Negative limit switch pin (limit_switch mode) |
+| `limit_pos_pin` | int | none | Positive limit switch pin (limit_switch mode) |
 | `soft_limits` | bool | false | Enable soft limits |
 | `soft_min` | int | INT32_MIN | Minimum position |
 | `soft_max` | int | INT32_MAX | Maximum position |
 
+**Homing Modes for SDSK:**
+- `none`: No homing performed. Motor is ready immediately after HLFB asserts.
+- `msp`: Motor homes itself via MSP (Motion Setup Program) configuration. Cutter just enables and waits for HLFB. This is the default.
+- `limit_switch`: Cutter performs homing using a limit switch, same as stepper motors.
+
 ```
 -> configure_sdsk motor=0 vel_max=20000 accel_max=100000
+<- ok motor=0
+
+-> configure_sdsk motor=0 homing_mode=none
+<- ok motor=0
+
+-> configure_sdsk motor=0 homing_mode=limit_switch limit_neg_pin=6
 <- ok motor=0
 ```
 
@@ -251,7 +265,7 @@ Configure a generic stepper motor. Uses ClearCore native limit switches for homi
 | `vel_max` | int | 10000 | Maximum velocity (steps/sec) |
 | `accel_max` | int | 100000 | Maximum acceleration (steps/sec²) |
 | `enable_priority` | int | motor | Enable/home order |
-| `home_on_enable` | bool | true | Auto-home when enabled |
+| `homing_mode` | string | limit_switch | Homing mode (see below) |
 | `homing_direction` | int | -1 | Homing direction (-1 or 1) |
 | `homing_seek_velocity` | int | 5000 | Fast approach velocity |
 | `homing_latch_velocity` | int | 500 | Slow precision velocity |
@@ -262,10 +276,17 @@ Configure a generic stepper motor. Uses ClearCore native limit switches for homi
 | `soft_min` | int | INT32_MIN | Minimum position |
 | `soft_max` | int | INT32_MAX | Maximum position |
 
-**Note:** If `home_on_enable=true`, the limit switch in the homing direction must be configured.
+**Homing Modes for Stepper:**
+- `none`: No homing performed. Motor is ready immediately when enabled.
+- `limit_switch`: Cutter performs homing using a limit switch. This is the default.
+
+**Note:** If `homing_mode=limit_switch`, the limit switch in the homing direction must be configured.
 
 ```
 -> configure_stepper motor=1 vel_max=5000 limit_neg_pin=6 homing_direction=-1
+<- ok motor=1
+
+-> configure_stepper motor=1 homing_mode=none
 <- ok motor=1
 ```
 
@@ -331,7 +352,7 @@ Enable a single motor. For ClearPath motors, waits for HLFB assertion.
 
 #### enable_all
 
-Enable all configured motors in priority order. Motors with lower `enable_priority` are enabled first. If `home_on_enable=true`, motors are homed sequentially.
+Enable all configured motors in priority order. Motors with lower `enable_priority` are enabled first. Motors with `homing_mode` other than `none` are homed sequentially.
 
 ```
 -> enable_all seq=1

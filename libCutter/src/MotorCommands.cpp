@@ -29,8 +29,20 @@ static bool RequireReady(Controller* ctrl, const ParsedCommand& cmd) {
 
 // === Configuration Commands ===
 
+// Parse homing_mode string to enum
+static HomingMode ParseHomingMode(const char* str, HomingMode default_val) {
+    if (!str) return default_val;
+    if (strcmp(str, "none") == 0) return HomingMode::NONE;
+    if (strcmp(str, "msp") == 0) return HomingMode::MSP;
+    if (strcmp(str, "limit_switch") == 0) return HomingMode::LIMIT_SWITCH;
+    return default_val;
+}
+
 // Configure ClearPath-SD/SK motor (uses HLFB for done/error notification)
-// SDSK motors use hard-stop homing: move into mechanical stop, detect via HLFB torque
+// Homing modes:
+//   - msp: Motor homes via MSP config, Cutter just waits for HLFB
+//   - limit_switch: Cutter performs homing using endstop (like stepper)
+//   - none: No homing, motor ready after HLFB asserts
 static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     State s = ctrl->GetState();
     if (s == State::UNCONNECTED) {
@@ -44,6 +56,71 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    // Parse homing_mode (default: msp)
+    const char* homing_mode_str = cmd.GetString("homing_mode");
+    HomingMode homing_mode = ParseHomingMode(homing_mode_str, HomingMode::MSP);
+
+    // Validate homing_mode string if provided
+    if (homing_mode_str && strcmp(homing_mode_str, "none") != 0 &&
+        strcmp(homing_mode_str, "msp") != 0 && strcmp(homing_mode_str, "limit_switch") != 0) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM,
+                 "homing_mode must be none, msp, or limit_switch");
+        return;
+    }
+
+    // For limit_switch mode, validate homing params
+    int32_t homing_dir = cmd.GetIntOr("homing_direction", -1);
+    int32_t limit_neg = cmd.GetIntOr("limit_neg_pin", CutterHal::PIN_INVALID);
+    int32_t limit_pos = cmd.GetIntOr("limit_pos_pin", CutterHal::PIN_INVALID);
+
+    if (homing_mode == HomingMode::LIMIT_SWITCH) {
+        if (homing_dir != -1 && homing_dir != 1) {
+            SendError(ctrl, cmd, ErrorCode::INVALID_PARAM,
+                     "homing_direction must be -1 or 1");
+            return;
+        }
+        if (homing_dir == -1 && limit_neg == CutterHal::PIN_INVALID) {
+            SendError(ctrl, cmd, ErrorCode::MISSING_PARAM,
+                     "limit_neg_pin required for homing in negative direction");
+            return;
+        }
+        if (homing_dir == 1 && limit_pos == CutterHal::PIN_INVALID) {
+            SendError(ctrl, cmd, ErrorCode::MISSING_PARAM,
+                     "limit_pos_pin required for homing in positive direction");
+            return;
+        }
+
+        // Validate pin indices
+        if (limit_neg != CutterHal::PIN_INVALID &&
+            (limit_neg < 0 || limit_neg >= static_cast<int32_t>(NUM_PINS))) {
+            SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid limit_neg_pin");
+            return;
+        }
+        if (limit_pos != CutterHal::PIN_INVALID &&
+            (limit_pos < 0 || limit_pos >= static_cast<int32_t>(NUM_PINS))) {
+            SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid limit_pos_pin");
+            return;
+        }
+
+        // Check for pin conflicts
+        if (limit_neg != CutterHal::PIN_INVALID) {
+            PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_neg));
+            if (pin->mode != PinMode::UNCONFIGURED && pin->mode != PinMode::MOTOR_LIMIT) {
+                SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                         "limit_neg_pin already configured");
+                return;
+            }
+        }
+        if (limit_pos != CutterHal::PIN_INVALID) {
+            PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_pos));
+            if (pin->mode != PinMode::UNCONFIGURED && pin->mode != PinMode::MOTOR_LIMIT) {
+                SendError(ctrl, cmd, ErrorCode::PIN_CONFLICT,
+                         "limit_pos_pin already configured");
+                return;
+            }
+        }
+    }
+
     MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
     memset(slot, 0, sizeof(MotorSlot));
     slot->motor_index = static_cast<uint8_t>(motor);
@@ -54,15 +131,39 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Enable/homing configuration
     slot->enable_priority = static_cast<uint8_t>(cmd.GetIntOr("enable_priority", motor));
-    slot->home_on_enable = cmd.GetBoolOr("home_on_enable", true);
-    slot->homing_direction = cmd.GetIntOr("homing_direction", -1);
-    slot->homing_seek_velocity = cmd.GetIntOr("homing_velocity", 2000);
-    slot->homing_torque_limit = cmd.GetIntOr("homing_torque_limit", 0);  // 0 = use HLFB default
+    slot->homing_mode = homing_mode;
 
     // Soft limits
     slot->soft_limits_enabled = cmd.GetBoolOr("soft_limits", false);
     slot->soft_limit_min = cmd.GetIntOr("soft_min", INT32_MIN);
     slot->soft_limit_max = cmd.GetIntOr("soft_max", INT32_MAX);
+
+    // Limit switch and homing configuration (for limit_switch mode)
+    if (homing_mode == HomingMode::LIMIT_SWITCH) {
+        slot->limit_neg_pin = static_cast<uint8_t>(limit_neg);
+        slot->limit_pos_pin = static_cast<uint8_t>(limit_pos);
+        slot->homing_direction = homing_dir;
+        slot->homing_seek_velocity = cmd.GetIntOr("homing_seek_velocity", 5000);
+        slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
+        slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
+
+        // Configure ClearCore limit switches
+        if (limit_neg != CutterHal::PIN_INVALID) {
+            CutterHal::SetLimitSwitchNeg(slot->motor_index, static_cast<uint8_t>(limit_neg));
+            PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_neg));
+            pin->mode = PinMode::MOTOR_LIMIT;
+            pin->pin_index = static_cast<uint8_t>(limit_neg);
+        }
+        if (limit_pos != CutterHal::PIN_INVALID) {
+            CutterHal::SetLimitSwitchPos(slot->motor_index, static_cast<uint8_t>(limit_pos));
+            PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_pos));
+            pin->mode = PinMode::MOTOR_LIMIT;
+            pin->pin_index = static_cast<uint8_t>(limit_pos);
+        }
+    } else {
+        slot->limit_neg_pin = CutterHal::PIN_INVALID;
+        slot->limit_pos_pin = CutterHal::PIN_INVALID;
+    }
 
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
@@ -79,7 +180,9 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
 }
 
 // Configure generic stepper motor (uses ClearCore native limit switches for homing)
-// Limit switches must be NC (normally-closed) for fail-safe operation
+// Homing modes:
+//   - limit_switch: Cutter performs homing using endstop (default)
+//   - none: No homing performed
 static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     State s = ctrl->GetState();
     if (s == State::UNCONNECTED) {
@@ -91,6 +194,21 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     if (!cmd.GetInt("motor", &motor) || motor < 0 || motor >= static_cast<int32_t>(NUM_MOTORS)) {
         SendError(ctrl, cmd, ErrorCode::INVALID_MOTOR, "Invalid motor");
         return;
+    }
+
+    // Parse homing_mode (default: limit_switch)
+    const char* homing_mode_str = cmd.GetString("homing_mode");
+    HomingMode homing_mode = HomingMode::LIMIT_SWITCH;  // default for steppers
+    if (homing_mode_str) {
+        if (strcmp(homing_mode_str, "none") == 0) {
+            homing_mode = HomingMode::NONE;
+        } else if (strcmp(homing_mode_str, "limit_switch") == 0) {
+            homing_mode = HomingMode::LIMIT_SWITCH;
+        } else {
+            SendError(ctrl, cmd, ErrorCode::INVALID_PARAM,
+                     "homing_mode must be none or limit_switch");
+            return;
+        }
     }
 
     // Get homing direction first to validate limit switch requirements
@@ -105,8 +223,7 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     int32_t limit_pos = cmd.GetIntOr("limit_pos_pin", CutterHal::PIN_INVALID);
 
     // Validate limit switch pin in homing direction is configured
-    bool home_on_enable = cmd.GetBoolOr("home_on_enable", true);
-    if (home_on_enable) {
+    if (homing_mode == HomingMode::LIMIT_SWITCH) {
         if (homing_dir == -1 && limit_neg == CutterHal::PIN_INVALID) {
             SendError(ctrl, cmd, ErrorCode::MISSING_PARAM,
                      "limit_neg_pin required for homing in negative direction");
@@ -158,7 +275,7 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Enable/homing configuration
     slot->enable_priority = static_cast<uint8_t>(cmd.GetIntOr("enable_priority", motor));
-    slot->home_on_enable = home_on_enable;
+    slot->homing_mode = homing_mode;
 
     // Soft limits
     slot->soft_limits_enabled = cmd.GetBoolOr("soft_limits", false);
@@ -611,22 +728,16 @@ static void CmdClearAlerts(Controller* ctrl, const ParsedCommand& cmd) {
 // === Homing Commands ===
 
 // Start homing sequence for a motor (called from enable_all and home command)
+// Only called when homing_mode is LIMIT_SWITCH
 void StartHoming(MotorSlot* slot, const CommandId& id) {
     slot->moving = true;
     slot->move_id = id;
     slot->homed = false;
 
-    if (slot->type == MotorType::GENERIC_STEPPER) {
-        // Stepper: limit switch-based homing using ClearCore native support
-        slot->homing_state = HomingState::SEEKING;
-        int32_t velocity = slot->homing_seek_velocity * slot->homing_direction;
-        CutterHal::MoveVelocity(slot->motor_index, velocity);
-    } else if (slot->type == MotorType::CLEARPATH) {
-        // SDSK: hard-stop homing via HLFB
-        slot->homing_state = HomingState::SDSK_SEEKING;
-        int32_t velocity = slot->homing_seek_velocity * slot->homing_direction;
-        CutterHal::MoveVelocity(slot->motor_index, velocity);
-    }
+    // Both stepper and SDSK use same limit switch homing when homing_mode=LIMIT_SWITCH
+    slot->homing_state = HomingState::SEEKING;
+    int32_t velocity = slot->homing_seek_velocity * slot->homing_direction;
+    CutterHal::MoveVelocity(slot->motor_index, velocity);
 }
 
 static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
@@ -645,6 +756,11 @@ static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
     }
     if (!slot->enabled) {
         SendError(ctrl, cmd, ErrorCode::MOTOR_NOT_READY, "Motor not enabled");
+        return;
+    }
+    if (slot->homing_mode != HomingMode::LIMIT_SWITCH) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_STATE,
+                 "Homing requires homing_mode=limit_switch");
         return;
     }
 
@@ -810,37 +926,11 @@ static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
     }
 }
 
-// Check HLFB for SDSK hard-stop homing
-static void CheckSdskHomingState(Controller* ctrl, MotorSlot& motor) {
-    switch (motor.homing_state) {
-        case HomingState::SDSK_SEEKING: {
-            // Moving toward hard stop, monitoring HLFB for torque limit
-            uint8_t hlfb = CutterHal::GetHlfbState(motor.motor_index);
-
-            // HLFB_DEASSERTED (0) indicates motor hit torque limit (hard stop)
-            // This happens when ClearPath detects it can't complete the commanded move
-            if (hlfb == 0) {  // HLFB_DEASSERTED
-                motor.homing_state = HomingState::SDSK_CONFIRMED;
-                CutterHal::StopMotor(motor.motor_index, true);
-            }
-            break;
-        }
-
-        case HomingState::SDSK_CONFIRMED:
-            // Hard stop detected, complete homing
-            CompleteHoming(ctrl, motor);
-            break;
-
-        default:
-            break;
-    }
-}
-
 void CheckHomingState(Controller* ctrl, MotorSlot& motor) {
-    if (motor.type == MotorType::GENERIC_STEPPER) {
+    // Only limit switch homing needs state checking
+    // MSP homing is handled internally by the motor (no explicit states)
+    if (motor.homing_mode == HomingMode::LIMIT_SWITCH) {
         CheckStepperHomingState(ctrl, motor);
-    } else if (motor.type == MotorType::CLEARPATH) {
-        CheckSdskHomingState(ctrl, motor);
     }
 }
 

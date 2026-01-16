@@ -660,7 +660,7 @@ TEST_F(PinTest, LimitSwitchPinConflictEndstop) {
 
 TEST_F(PinTest, DigitalPinNotBlockedWithoutLimitSwitch) {
     // Configure motor without limit switches
-    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
     ctrl->Update();
     serial.ClearOutput();
 

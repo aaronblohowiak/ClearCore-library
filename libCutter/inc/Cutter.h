@@ -98,20 +98,36 @@ enum class MotorType : uint8_t {
 };
 
 /**
+    \brief Homing mode configuration
+
+    For SDSK motors:
+    - NONE: No homing performed by Cutter. Motor ready after HLFB asserts.
+    - MSP: Motor homes itself via MSP (Motion Setup Program) configuration.
+           Cutter just enables and waits for HLFB.
+    - LIMIT_SWITCH: Cutter performs homing using a limit switch (same as stepper).
+
+    For steppers:
+    - NONE: No homing performed.
+    - LIMIT_SWITCH: Cutter performs homing using a limit switch.
+**/
+enum class HomingMode : uint8_t {
+    NONE = 0,           ///< No homing performed
+    MSP,                ///< Motor homes via MSP config (SDSK only)
+    LIMIT_SWITCH,       ///< Cutter homes using limit switch
+};
+
+/**
     \brief Homing state machine states
 
-    Used for both generic steppers (endstop homing) and SDSK motors (hard-stop homing).
+    Used for limit switch homing (both stepper and SDSK when homing_mode=limit_switch).
 
-    Stepper homing sequence: IDLE -> SEEKING -> BACKING_OFF -> LATCHING -> COMPLETE
-    SDSK homing sequence: IDLE -> SDSK_SEEKING -> SDSK_CONFIRMED -> COMPLETE
+    Homing sequence: IDLE -> SEEKING -> BACKING_OFF -> LATCHING -> COMPLETE
 **/
 enum class HomingState : uint8_t {
     IDLE = 0,           ///< Not homing
-    SEEKING,            ///< Stepper: moving toward endstop at seek velocity
-    BACKING_OFF,        ///< Stepper: backing away from endstop
-    LATCHING,           ///< Stepper: slow approach for precise contact
-    SDSK_SEEKING,       ///< SDSK: moving toward hard stop, monitoring HLFB
-    SDSK_CONFIRMED,     ///< SDSK: hard stop detected, setting position
+    SEEKING,            ///< Moving toward endstop at seek velocity
+    BACKING_OFF,        ///< Backing away from endstop
+    LATCHING,           ///< Slow approach for precise contact
     COMPLETE,           ///< Homing complete, position set to zero
 };
 
@@ -235,7 +251,7 @@ struct MotorSlot {
 
     // Common enable/homing configuration
     uint8_t enable_priority;    ///< Enable/home order (lower = earlier, default = motor index)
-    bool home_on_enable;        ///< Automatically home when enabled via enable_all
+    HomingMode homing_mode;     ///< How to home: NONE, MSP (SDSK only), or LIMIT_SWITCH
     bool homed;                 ///< Motor has been homed since last enable
 
     // Motion parameters
@@ -250,18 +266,15 @@ struct MotorSlot {
     // Homing state (both motor types)
     HomingState homing_state;
 
-    // Limit switch configuration (using ClearCore native support)
+    // Limit switch configuration (used when homing_mode=LIMIT_SWITCH)
     uint8_t limit_neg_pin;          ///< Pin for negative limit switch (PIN_INVALID = none)
     uint8_t limit_pos_pin;          ///< Pin for positive limit switch (PIN_INVALID = none)
 
-    // Generic stepper homing parameters
+    // Homing parameters (used when homing_mode=LIMIT_SWITCH for both motor types)
     int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
     int32_t homing_seek_velocity;   ///< Fast approach velocity (steps/sec, always positive)
     int32_t homing_latch_velocity;  ///< Slow precision velocity (steps/sec, always positive)
     int32_t homing_backoff_distance;///< Distance to back off after first contact (steps)
-
-    // SDSK/ClearPath homing (hard-stop based)
-    int32_t homing_torque_limit;    ///< HLFB torque % that indicates hard stop (0 = use default)
 
     // SDSK/ClearPath runtime state
     uint8_t last_hlfb_state;        ///< For detecting HLFB changes

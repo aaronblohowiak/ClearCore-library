@@ -46,9 +46,9 @@ TEST_F(HomingTest, HomeCommand) {
     EXPECT_EQ(ctrl->GetState(), State::WORKING);
 }
 
-TEST_F(HomingTest, SdskHomesWithHlfb) {
-    // Configure as ClearPath (SDSK)
-    serial.SendLine("configure_sdsk motor=1");
+TEST_F(HomingTest, SdskHomesWithLimitSwitch) {
+    // Configure SDSK with limit switch homing (instead of MSP)
+    serial.SendLine("configure_sdsk motor=1 homing_mode=limit_switch limit_neg_pin=7");
     ctrl->Update();
     SET_HLFB(1, 1);  // HLFB_ASSERTED - motor ready
     serial.SendLine("enable motor=1");
@@ -58,9 +58,9 @@ TEST_F(HomingTest, SdskHomesWithHlfb) {
     serial.SendLine("home motor=1");
     ctrl->Update();
 
-    // SDSK motors use SDSK_SEEKING state (hard-stop homing via HLFB)
+    // SDSK with limit_switch mode uses same SEEKING state as steppers
     EXPECT_TRUE(serial.HasOutput("ok"));
-    EXPECT_EQ(ctrl->GetMotor(1)->homing_state, HomingState::SDSK_SEEKING);
+    EXPECT_EQ(ctrl->GetMotor(1)->homing_state, HomingState::SEEKING);
     EXPECT_TRUE(ctrl->GetMotor(1)->moving);
 }
 
@@ -155,8 +155,8 @@ TEST_F(HomingTest, LimitSwitchRequiredForHoming) {
 }
 
 TEST_F(HomingTest, NoLimitSwitchRequiredWhenNotHoming) {
-    // Configure without limit switch but with home_on_enable=0
-    serial.SendLine("configure_stepper motor=0 home_on_enable=0");
+    // Configure without limit switch but with homing_mode=none
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
     ctrl->Update();
 
     // Should succeed because homing is disabled
