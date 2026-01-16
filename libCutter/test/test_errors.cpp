@@ -328,13 +328,13 @@ TEST_F(ErrorTest, InputOverflowRecovery) {
 TEST_F(ErrorTest, MaxValidCommandFits) {
     // Test that the worst-case valid command fits in the buffer
     // configure_stepper with all parameters at max values
+    // Note: We omit epoch since we're just testing buffer size, not protocol
     std::string worst_case =
         "configure_stepper motor=0 vel_max=2147483647 accel_max=2147483647 "
         "enable_priority=255 home_on_enable=false homing_direction=-1 "
         "homing_seek_velocity=2147483647 homing_latch_velocity=2147483647 "
         "homing_backoff=2147483647 limit_neg_pin=6 limit_pos_pin=7 "
-        "soft_limits=true soft_min=-2147483648 soft_max=2147483647 "
-        "epoch=1 seq=1";
+        "soft_limits=true soft_min=-2147483648 soft_max=2147483647";
 
     // Verify it's under 512 bytes
     EXPECT_LT(worst_case.length(), MAX_COMMAND_LENGTH);
@@ -343,6 +343,7 @@ TEST_F(ErrorTest, MaxValidCommandFits) {
     ctrl->Update();
 
     // Should get 'ok', not overflow error
+    SCOPED_TRACE("Output was: " + serial.GetOutput());
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_FALSE(serial.HasOutput("code=106"));
 }

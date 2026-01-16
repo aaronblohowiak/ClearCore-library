@@ -242,7 +242,7 @@ TEST_F(SchemaTest, SchemaFileLoads) {
     EXPECT_TRUE(schema.has("commands"));
     EXPECT_TRUE(schema.has("events"));
     EXPECT_TRUE(schema.has("errors"));
-    EXPECT_TRUE(schema.has("primitive_types"));
+    EXPECT_TRUE(schema.has("types"));
 }
 
 // Test that all commands in schema are recognized

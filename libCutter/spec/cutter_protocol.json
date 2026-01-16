@@ -4,25 +4,14 @@
   "version": "1.0.0",
   "protocol_version": "1",
 
-  "primitive_types": {
-    "int8": { "signed": true, "bits": 8, "min": -128, "max": 127 },
-    "uint8": { "signed": false, "bits": 8, "min": 0, "max": 255 },
-    "int16": { "signed": true, "bits": 16, "min": -32768, "max": 32767 },
-    "uint16": { "signed": false, "bits": 16, "min": 0, "max": 65535 },
-    "int32": { "signed": true, "bits": 32, "min": -2147483648, "max": 2147483647 },
-    "uint32": { "signed": false, "bits": 32, "min": 0, "max": 4294967295 },
-    "bool": { "values": ["true", "false"], "wire_format": "string" },
-    "string": { "wire_format": "string" }
-  },
-
   "types": {
-    "motor_index": { "base": "uint8", "min": 0, "max": 3 },
-    "pin_index": { "base": "uint8", "min": 0, "max": 12 },
-    "direction": { "base": "int8", "values": [-1, 1] },
-    "edge_mode": { "base": "string", "values": ["none", "rising", "falling", "both"] },
-    "clock_rate": { "base": "string", "values": ["low", "normal", "high"] },
-    "duty_cycle": { "base": "uint16", "min": 0, "max": 65535 },
-    "hbridge_value": { "base": "int16", "min": -32767, "max": 32767 }
+    "motor_index": { "type": "uint8", "min": 0, "max": 3 },
+    "pin_index": { "type": "uint8", "min": 0, "max": 12 },
+    "direction": { "type": "int8", "values": [-1, 1] },
+    "edge_mode": { "type": "string", "values": ["none", "rising", "falling", "both"] },
+    "clock_rate": { "type": "string", "values": ["low", "normal", "high"] },
+    "duty_cycle": { "type": "uint16", "min": 0, "max": 65535 },
+    "hbridge_value": { "type": "int16", "min": -32767, "max": 32767 }
   },
 
   "global_params": {
