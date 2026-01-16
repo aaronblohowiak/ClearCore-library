@@ -134,7 +134,7 @@ TEST_F(PinTest, ConfigureAnalogInInvalidPin) {
 // === PWM Configuration ===
 
 TEST_F(PinTest, ConfigurePwm) {
-    serial.SendLine("configure_pwm pin=0 duty=32000 frequency=1000");
+    serial.SendLine("configure_pwm pin=0 duty=32000");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("ok"));

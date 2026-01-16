@@ -62,12 +62,6 @@ void SetPwmDuty(uint8_t pin, uint16_t duty) {
     }
 }
 
-void SetPwmFrequency(uint8_t pin, uint32_t freq) {
-    // PWM frequency not tracked in fake state currently
-    (void)pin;
-    (void)freq;
-}
-
 void SetHBridgeValue(uint8_t pin, int16_t value) {
     if (pin == 4 || pin == 5) {
         g_fake.hbridge_value[pin - 4] = value;

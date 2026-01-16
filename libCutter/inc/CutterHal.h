@@ -65,16 +65,11 @@ int16_t ReadAnalogPin(uint8_t pin);
 
     \param[in] pin Pin index (0-5 for PWM capable pins)
     \param[in] duty Duty cycle (0-65535, maps to 0-100%)
+
+    \note ClearCore PWM runs at a fixed hardware frequency (~1.5kHz).
+          Frequency is not configurable per-pin.
 **/
 void SetPwmDuty(uint8_t pin, uint16_t duty);
-
-/**
-    \brief Set PWM frequency
-
-    \param[in] pin Pin index (0-5)
-    \param[in] freq Frequency in Hz
-**/
-void SetPwmFrequency(uint8_t pin, uint32_t freq);
 
 /**
     \brief Set H-Bridge output value

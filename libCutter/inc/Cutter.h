@@ -183,7 +183,6 @@ struct AnalogInState {
 **/
 struct PwmState {
     uint16_t duty;
-    uint32_t frequency;
 };
 
 /**

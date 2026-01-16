@@ -331,12 +331,11 @@
     },
 
     "configure_pwm": {
-      "description": "Configure pin as PWM output",
+      "description": "Configure pin as PWM output. ClearCore PWM runs at fixed ~1.5kHz.",
       "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
       "params": {
         "pin": { "type": "pin_index", "required": true, "max": 5 },
-        "duty": { "type": "uint32", "required": false, "default": 0, "max": 65535 },
-        "frequency": { "type": "int32", "min": 1, "required": false, "default": 1000 }
+        "duty": { "type": "uint32", "required": false, "default": 0, "max": 65535 }
       },
       "response_params": ["pin"]
     },
@@ -382,12 +381,11 @@
     },
 
     "set_pwm": {
-      "description": "Set PWM parameters",
+      "description": "Set PWM duty cycle",
       "valid_states": ["CONNECTED", "CONFIGURED", "READY", "WORKING"],
       "params": {
         "pin": { "type": "pin_index", "required": true },
-        "duty": { "type": "uint32", "required": false, "max": 65535 },
-        "frequency": { "type": "int32", "min": 1, "required": false }
+        "duty": { "type": "uint32", "required": false, "max": 65535 }
       },
       "response_params": ["pin"]
     },

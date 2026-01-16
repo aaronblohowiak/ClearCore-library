@@ -186,9 +186,7 @@ static void CmdConfigurePwm(Controller* ctrl, const ParsedCommand& cmd) {
     PinSlot* slot = ctrl->GetPin(static_cast<uint8_t>(pin));
     slot->mode = PinMode::PWM;
     slot->pwm.duty = static_cast<uint16_t>(cmd.GetIntOr("duty", 0));
-    slot->pwm.frequency = static_cast<uint32_t>(cmd.GetIntOr("frequency", 1000));
 
-    CutterHal::SetPwmFrequency(slot->pin_index, slot->pwm.frequency);
     CutterHal::SetPwmDuty(slot->pin_index, slot->pwm.duty);
 
     ctrl->Response().Ok();
@@ -363,12 +361,6 @@ static void CmdSetPwm(Controller* ctrl, const ParsedCommand& cmd) {
     if (cmd.GetInt("duty", &duty)) {
         slot->pwm.duty = static_cast<uint16_t>(duty);
         CutterHal::SetPwmDuty(slot->pin_index, slot->pwm.duty);
-    }
-
-    int32_t freq;
-    if (cmd.GetInt("frequency", &freq)) {
-        slot->pwm.frequency = static_cast<uint32_t>(freq);
-        CutterHal::SetPwmFrequency(slot->pin_index, slot->pwm.frequency);
     }
 
     ctrl->Response().Ok();

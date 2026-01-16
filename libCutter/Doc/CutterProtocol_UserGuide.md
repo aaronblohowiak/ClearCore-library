@@ -30,7 +30,7 @@ The Cutter Protocol implements the following functionality:
 - Digital input with change reporting and edge detection
 - Digital output with timeout protection
 - Analog input with threshold monitoring
-- PWM output with configurable frequency and duty cycle
+- PWM output with configurable duty cycle
 - H-Bridge output for bidirectional DC motor control
 - Tone generation for audio feedback
 
@@ -545,16 +545,15 @@ Configure a pin as analog input with optional threshold monitoring.
 
 #### configure_pwm
 
-Configure a pin as PWM output.
+Configure a pin as PWM output. ClearCore PWM runs at a fixed hardware frequency (~1.5kHz).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `pin` | int | required | Pin index (0-5) |
 | `duty` | int | 0 | Duty cycle (0-65535) |
-| `frequency` | int | 1000 | PWM frequency in Hz |
 
 ```
--> configure_pwm pin=0 frequency=10000 duty=32768
+-> configure_pwm pin=0 duty=32768
 <- ok pin=0
 ```
 
@@ -634,19 +633,15 @@ Write a value to a digital output pin.
 
 #### set_pwm
 
-Update PWM parameters on a configured PWM pin.
+Update PWM duty cycle on a configured PWM pin.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `pin` | int | Pin index |
 | `duty` | int | New duty cycle (0-65535) |
-| `frequency` | int | New frequency in Hz |
 
 ```
 -> set_pwm pin=0 duty=49152
-<- ok pin=0
-
--> set_pwm pin=0 frequency=5000 duty=16384
 <- ok pin=0
 ```
 
