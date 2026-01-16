@@ -50,6 +50,11 @@ struct FakeHalState {
     bool motion_canceled_neg_limit[4] = {};  // Alert flag
     bool motion_canceled_pos_limit[4] = {};  // Alert flag
 
+    // === E-Stop State ===
+    uint8_t estop_pin[4] = {255, 255, 255, 255};  // PIN_INVALID = 255
+    uint32_t estop_decel[4] = {};
+    bool motion_canceled_estop[4] = {};  // Alert flag
+
     // === Timing ===
     uint32_t time_ms = 0;
 
@@ -63,6 +68,7 @@ struct FakeHalState {
             motor_steps_complete[i] = true;
             limit_switch_neg_pin[i] = 255;  // PIN_INVALID
             limit_switch_pos_pin[i] = 255;
+            estop_pin[i] = 255;  // PIN_INVALID
         }
     }
 
@@ -172,6 +178,22 @@ struct FakeHalState {
         if (motor < 4) {
             motion_canceled_neg_limit[motor] = false;
             motion_canceled_pos_limit[motor] = false;
+            motion_canceled_estop[motor] = false;
+        }
+    }
+
+    /**
+     * @brief Trigger E-Stop for motor
+     *
+     * Simulates E-Stop activation - stops motor and sets alert.
+     * @param motor Motor index (0-3)
+     */
+    void TriggerEStop(uint8_t motor) {
+        if (motor < 4) {
+            motion_canceled_estop[motor] = true;
+            motor_moving[motor] = false;
+            motor_velocity[motor] = 0;
+            motor_steps_complete[motor] = true;
         }
     }
 };
@@ -193,4 +215,5 @@ extern FakeHalState g_fake;
 #define SET_MOTOR_FAULT(m, f)   g_fake.motor_fault[m] = (f)
 #define TRIGGER_NEG_LIMIT(m)    g_fake.TriggerNegativeLimit(m)
 #define TRIGGER_POS_LIMIT(m)    g_fake.TriggerPositiveLimit(m)
+#define TRIGGER_ESTOP(m)        g_fake.TriggerEStop(m)
 #define CLEAR_MOTOR_ALERTS(m)   g_fake.ClearAlerts(m)

@@ -184,7 +184,9 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         strcmp(cmd.name, "stop") == 0 ||
         strcmp(cmd.name, "home") == 0 ||
         strcmp(cmd.name, "set_position") == 0 ||
-        strcmp(cmd.name, "set_motor_clock") == 0) {
+        strcmp(cmd.name, "set_motor_clock") == 0 ||
+        strcmp(cmd.name, "configure_estop") == 0 ||
+        strcmp(cmd.name, "clear_alerts") == 0) {
         extern void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd);
         DispatchMotorCommand(this, cmd);
         return;
@@ -427,6 +429,30 @@ void Controller::CheckMotors() {
                     }
                 }
             }
+        }
+
+        // Check for E-Stop trigger
+        if (motor.moving && CutterHal::HasMotionCanceledEStop(motor.motor_index)) {
+            motor.moving = false;
+            m_response.Event("estop")
+                .Param("motor", static_cast<int32_t>(motor.motor_index))
+                .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
+            if (motor.move_id.has_epoch) m_response.Param("epoch", motor.move_id.epoch);
+            m_response.Param("seq", motor.move_id.seq);
+            SendResponse();
+
+            // Check if any motors still moving
+            bool any_moving = false;
+            for (size_t j = 0; j < NUM_MOTORS; j++) {
+                if (m_motors[j].moving) {
+                    any_moving = true;
+                    break;
+                }
+            }
+            if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                m_stateMachine.TransitionTo(State::READY);
+            }
+            continue;  // Skip other checks for this motor
         }
 
         // Check soft limits for velocity moves

@@ -290,6 +290,36 @@ bool HasMotionCanceledPosLimit(uint8_t motor);
 **/
 void ClearMotorAlerts(uint8_t motor);
 
+// === E-Stop ===
+
+/**
+    \brief Configure E-Stop pin for motor
+
+    The pin should be configured as digital input before calling this.
+    Uses NC (normally closed) switch logic - motion stops when pin goes low.
+
+    \param[in] motor Motor index (0-3)
+    \param[in] pin Pin to use as E-Stop (or PIN_INVALID to disable)
+    \return true if successfully configured
+**/
+bool SetMotorEStop(uint8_t motor, uint8_t pin);
+
+/**
+    \brief Set E-Stop deceleration rate for motor
+
+    \param[in] motor Motor index (0-3)
+    \param[in] decel Deceleration rate in steps/sec^2
+**/
+void SetMotorEStopDecel(uint8_t motor, uint32_t decel);
+
+/**
+    \brief Check if motion was canceled due to E-Stop
+
+    \param[in] motor Motor index (0-3)
+    \return true if MotionCanceledSensorEStop alert is set
+**/
+bool HasMotionCanceledEStop(uint8_t motor);
+
 // === Timing ===
 
 /**

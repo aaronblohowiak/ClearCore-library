@@ -180,9 +180,10 @@ bool IsMotorInFault(uint8_t motor) {
 
 bool HasMotorAlerts(uint8_t motor) {
     if (motor < 4) {
-        // Alerts present if motion was canceled by limit switch
+        // Alerts present if motion was canceled by limit switch or E-Stop
         return g_fake.motion_canceled_neg_limit[motor] ||
-               g_fake.motion_canceled_pos_limit[motor];
+               g_fake.motion_canceled_pos_limit[motor] ||
+               g_fake.motion_canceled_estop[motor];
     }
     return false;
 }
@@ -228,7 +229,29 @@ void ClearMotorAlerts(uint8_t motor) {
     if (motor < 4) {
         g_fake.motion_canceled_neg_limit[motor] = false;
         g_fake.motion_canceled_pos_limit[motor] = false;
+        g_fake.motion_canceled_estop[motor] = false;
     }
+}
+
+bool SetMotorEStop(uint8_t motor, uint8_t pin) {
+    if (motor < 4) {
+        g_fake.estop_pin[motor] = pin;
+        return true;
+    }
+    return false;
+}
+
+void SetMotorEStopDecel(uint8_t motor, uint32_t decel) {
+    if (motor < 4) {
+        g_fake.estop_decel[motor] = decel;
+    }
+}
+
+bool HasMotionCanceledEStop(uint8_t motor) {
+    if (motor < 4) {
+        return g_fake.motion_canceled_estop[motor];
+    }
+    return false;
 }
 
 uint32_t Milliseconds() {

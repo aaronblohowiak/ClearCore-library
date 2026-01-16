@@ -513,6 +513,101 @@ static void CmdSetMotorClock(Controller* ctrl, const ParsedCommand& cmd) {
     ctrl->SendResponse();
 }
 
+// === E-Stop Configuration ===
+
+// Configure E-Stop pin for one or all motors
+// Pin must be digital input - will auto-configure if UNCONFIGURED
+static void CmdConfigureEStop(Controller* ctrl, const ParsedCommand& cmd) {
+    State s = ctrl->GetState();
+    if (s == State::UNCONNECTED) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_STATE, "Not connected");
+        return;
+    }
+
+    int32_t pin;
+    if (!cmd.GetInt("pin", &pin) || pin < 0 || pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid pin");
+        return;
+    }
+
+    // Check pin can be used as digital input
+    PinSlot* pin_slot = ctrl->GetPin(static_cast<uint8_t>(pin));
+    if (pin_slot->mode == PinMode::UNCONFIGURED) {
+        // Auto-configure as digital input
+        pin_slot->mode = PinMode::DIGITAL_IN;
+        pin_slot->pin_index = static_cast<uint8_t>(pin);
+    } else if (pin_slot->mode != PinMode::DIGITAL_IN &&
+               pin_slot->mode != PinMode::MOTOR_LIMIT) {
+        SendError(ctrl, cmd, ErrorCode::PIN_CAPABILITY,
+                 "Pin must be digital input");
+        return;
+    }
+
+    // Get motor or "all"
+    const char* motor_str = cmd.GetString("motor");
+    int32_t motor_num;
+    bool all_motors = false;
+
+    if (motor_str && strcmp(motor_str, "all") == 0) {
+        all_motors = true;
+    } else if (!cmd.GetInt("motor", &motor_num) || motor_num < 0 ||
+               motor_num >= static_cast<int32_t>(NUM_MOTORS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_MOTOR, "Invalid motor (use 0-3 or 'all')");
+        return;
+    }
+
+    // Optional decel rate
+    int32_t decel = cmd.GetIntOr("decel", 0);  // 0 = use default
+
+    // Apply E-Stop configuration
+    if (all_motors) {
+        for (size_t i = 0; i < NUM_MOTORS; i++) {
+            CutterHal::SetMotorEStop(static_cast<uint8_t>(i), static_cast<uint8_t>(pin));
+            if (decel > 0) {
+                CutterHal::SetMotorEStopDecel(static_cast<uint8_t>(i), static_cast<uint32_t>(decel));
+            }
+        }
+    } else {
+        CutterHal::SetMotorEStop(static_cast<uint8_t>(motor_num), static_cast<uint8_t>(pin));
+        if (decel > 0) {
+            CutterHal::SetMotorEStopDecel(static_cast<uint8_t>(motor_num), static_cast<uint32_t>(decel));
+        }
+    }
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("pin", pin);
+    if (all_motors) {
+        ctrl->Response().Param("motor", "all");
+    } else {
+        ctrl->Response().Param("motor", motor_num);
+    }
+    ctrl->SendResponse();
+}
+
+// Clear motor alerts (limit switch, E-Stop)
+// Required after E-Stop or limit switch triggers to allow further motion
+static void CmdClearAlerts(Controller* ctrl, const ParsedCommand& cmd) {
+    int32_t motor;
+    if (!cmd.GetInt("motor", &motor) || motor < 0 || motor >= static_cast<int32_t>(NUM_MOTORS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_MOTOR, "Invalid motor");
+        return;
+    }
+
+    MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
+    if (slot->type == MotorType::UNCONFIGURED) {
+        SendError(ctrl, cmd, ErrorCode::MOTOR_NOT_CONFIGURED, "Motor not configured");
+        return;
+    }
+
+    CutterHal::ClearMotorAlerts(static_cast<uint8_t>(motor));
+
+    ctrl->Response().Ok();
+    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("motor", motor);
+    ctrl->SendResponse();
+}
+
 // === Homing Commands ===
 
 // Start homing sequence for a motor (called from enable_all and home command)
@@ -774,6 +869,10 @@ void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd) {
         CmdSetPosition(ctrl, cmd);
     } else if (strcmp(cmd.name, "set_motor_clock") == 0) {
         CmdSetMotorClock(ctrl, cmd);
+    } else if (strcmp(cmd.name, "configure_estop") == 0) {
+        CmdConfigureEStop(ctrl, cmd);
+    } else if (strcmp(cmd.name, "clear_alerts") == 0) {
+        CmdClearAlerts(ctrl, cmd);
     }
 }
 
