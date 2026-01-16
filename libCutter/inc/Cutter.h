@@ -24,6 +24,27 @@
 #include "CutterHal.h"
 #include <stdint.h>
 
+// Use ClearCore's ISerial interface directly
+#ifdef CUTTER_PLATFORM_CLEARCORE
+#include "ISerial.h"
+namespace Cutter {
+using ISerial = ClearCore::ISerial;
+}
+#else
+// For testing/simulation, define a minimal interface
+namespace Cutter {
+class ISerial {
+public:
+    virtual ~ISerial() = default;
+    virtual int16_t CharGet() = 0;
+    virtual int16_t CharPeek() = 0;
+    virtual int32_t AvailableForRead() = 0;
+    virtual bool SendChar(uint8_t c) = 0;
+    virtual bool Send(const char* str) = 0;
+};
+}
+#endif
+
 namespace Cutter {
 
 /**
@@ -52,33 +73,6 @@ struct CommandId {
 // Forward declarations
 struct PinSlot;
 struct MotorSlot;
-
-/**
-    \brief Serial interface abstraction
-
-    Implement this interface to connect Cutter to USB, Ethernet, etc.
-    ClearCore's SerialUsb and SerialDriver classes are compatible.
-
-    \code{.cpp}
-    // Using ClearCore's USB serial
-    Cutter::Controller ctrl(&ConnectorUsb);
-
-    // Or wrap a custom transport
-    class MySerial : public Cutter::ISerial {
-        int16_t CharGet() override { return myTransport.read(); }
-        // ... implement other methods
-    };
-    \endcode
-**/
-class ISerial {
-public:
-    virtual ~ISerial() = default;
-    virtual int16_t CharGet() = 0;
-    virtual int16_t CharPeek() = 0;
-    virtual int AvailableForRead() = 0;
-    virtual bool SendChar(char c) = 0;
-    virtual bool Send(const char* str) = 0;
-};
 
 /**
     \brief Pin operating mode

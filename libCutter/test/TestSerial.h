@@ -60,7 +60,7 @@ public:
      * @brief Peek at next character without consuming
      * @return Character or -1 if buffer empty
      */
-    int16_t CharPeek() {
+    int16_t CharPeek() override {
         if (input_pos_ >= input_buffer_.size()) {
             return -1;
         }
@@ -71,8 +71,8 @@ public:
      * @brief Check if input data is available
      * @return Number of bytes available
      */
-    int AvailableForRead() override {
-        return static_cast<int>(input_buffer_.size() - input_pos_);
+    int32_t AvailableForRead() override {
+        return static_cast<int32_t>(input_buffer_.size() - input_pos_);
     }
 
     /**
@@ -80,8 +80,8 @@ public:
      * @param c Character to send
      * @return true (always succeeds in test)
      */
-    bool SendChar(char c) {
-        output_buffer_ += c;
+    bool SendChar(uint8_t c) override {
+        output_buffer_ += static_cast<char>(c);
         return true;
     }
 
