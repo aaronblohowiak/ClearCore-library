@@ -218,6 +218,27 @@ constexpr uint8_t HLFB_HAS_MEASUREMENT = 2; ///< PWM mode with speed/torque meas
 constexpr uint8_t HLFB_UNKNOWN = 3;         ///< State unknown / transitioning
 
 /**
+    \brief HLFB mode constants (ClearPath motors)
+
+    Must match the HLFB mode configured in MSP (Motor Setup Program):
+    - HLFB_MODE_STATIC: ASG, Servo On, In Range
+    - HLFB_MODE_HAS_BIPOLAR_PWM: ASG w/Measured Torque (recommended)
+**/
+constexpr uint8_t HLFB_MODE_STATIC = 0;           ///< Digital on/off (ASG mode)
+constexpr uint8_t HLFB_MODE_HAS_BIPOLAR_PWM = 2;  ///< Bipolar PWM (-100% to +100%)
+
+/**
+    \brief Configure HLFB interpretation mode
+
+    This tells ClearCore how to interpret the HLFB signal from the motor.
+    Must match the HLFB mode configured in MSP.
+
+    \param[in] motor Motor index (0-3)
+    \param[in] mode HLFB mode constant (HLFB_MODE_*)
+**/
+void SetHlfbMode(uint8_t motor, uint8_t mode);
+
+/**
     \brief Get HLFB state for ClearPath motors
 
     \param[in] motor Motor index (0-3)

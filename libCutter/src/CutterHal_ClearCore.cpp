@@ -226,6 +226,23 @@ bool StepsComplete(uint8_t motor) {
     return true;
 }
 
+void SetHlfbMode(uint8_t motor, uint8_t mode) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        ClearCore::MotorDriver::HlfbModes ccMode;
+        switch (mode) {
+            case HLFB_MODE_HAS_BIPOLAR_PWM:
+                ccMode = ClearCore::MotorDriver::HLFB_MODE_HAS_BIPOLAR_PWM;
+                break;
+            case HLFB_MODE_STATIC:
+            default:
+                ccMode = ClearCore::MotorDriver::HLFB_MODE_STATIC;
+                break;
+        }
+        m->HlfbMode(ccMode);
+    }
+}
+
 uint8_t GetHlfbState(uint8_t motor) {
     auto* m = GetMotor(motor);
     if (m) {

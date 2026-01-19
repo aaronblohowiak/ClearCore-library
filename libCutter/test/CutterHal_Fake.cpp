@@ -169,6 +169,12 @@ bool StepsComplete(uint8_t motor) {
     return true;
 }
 
+void SetHlfbMode(uint8_t motor, uint8_t mode) {
+    if (motor < 4) {
+        g_fake.hlfb_mode[motor] = mode;
+    }
+}
+
 uint8_t GetHlfbState(uint8_t motor) {
     if (motor < 4) {
         return g_fake.hlfb_state[motor];

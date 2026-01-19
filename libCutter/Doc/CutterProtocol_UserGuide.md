@@ -221,6 +221,16 @@ Immediately stop all motors and enter ERROR state.
 
 Configure a ClearPath-SD/SK servo motor. Uses HLFB for position confirmation.
 
+**MSP Configuration Requirements:**
+
+The motor must be configured in Teknic's MSP (Motor Setup Program) with:
+- **HLFB Mode**: "ASG - w/Measured Torque" (recommended) or "All Systems Go (ASG)"
+- **Input Mode**: "Step and Direction"
+
+The "ASG - w/Measured Torque" mode provides bipolar PWM feedback that indicates both
+position confirmation (ASG) and torque level. This allows Cutter to detect when moves
+complete and when the motor hits torque limits during homing.
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `motor` | int | required | Motor index (0-3) |

@@ -45,6 +45,7 @@ struct FakeHalState {
     int32_t motor_vel_max[4] = {};
     int32_t motor_accel_max[4] = {};
     uint8_t hlfb_state[4] = {};
+    uint8_t hlfb_mode[4] = {};                // HLFB interpretation mode
     bool motor_ready[4] = {};
 
     // === Limit Switch State ===
