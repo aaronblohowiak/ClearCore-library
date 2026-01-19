@@ -37,10 +37,39 @@ static ClearCore::MotorDriver* GetMotor(uint8_t motor) {
     return nullptr;
 }
 
+// Convert HAL pin index to ClearCorePins enum
+static ClearCorePins ToClearCorePin(uint8_t pin) {
+    if (pin == PIN_INVALID) {
+        return CLEARCORE_PIN_INVALID;
+    }
+    return static_cast<ClearCorePins>(pin);
+}
+
 bool ReadDigitalPin(uint8_t pin) {
     auto* conn = GetConnector(pin);
     if (conn) {
         return conn->State();
+    }
+    return false;
+}
+
+bool InputRisen(uint8_t pin) {
+    if (pin >= 6 && pin <= 12) {
+        // Pins 6-12 are DigitalIn or DigitalInAnalogIn
+        auto* conn = static_cast<ClearCore::DigitalIn*>(GetConnector(pin));
+        if (conn) {
+            return conn->InputRisen();
+        }
+    }
+    return false;
+}
+
+bool InputFallen(uint8_t pin) {
+    if (pin >= 6 && pin <= 12) {
+        auto* conn = static_cast<ClearCore::DigitalIn*>(GetConnector(pin));
+        if (conn) {
+            return conn->InputFallen();
+        }
     }
     return false;
 }
@@ -239,6 +268,74 @@ bool IsPinInFault(uint8_t pin) {
     }
     return false;
 }
+
+// === Limit Switches ===
+
+bool SetLimitSwitchNeg(uint8_t motor, uint8_t pin) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->LimitSwitchNeg(ToClearCorePin(pin));
+    }
+    return false;
+}
+
+bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->LimitSwitchPos(ToClearCorePin(pin));
+    }
+    return false;
+}
+
+bool HasMotionCanceledNegLimit(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->AlertReg().bit.MotionCanceledNegativeLimit;
+    }
+    return false;
+}
+
+bool HasMotionCanceledPosLimit(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->AlertReg().bit.MotionCanceledPositiveLimit;
+    }
+    return false;
+}
+
+void ClearMotorAlerts(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        m->ClearAlerts();
+    }
+}
+
+// === E-Stop ===
+
+bool SetMotorEStop(uint8_t motor, uint8_t pin) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->EStopConnector(ToClearCorePin(pin));
+    }
+    return false;
+}
+
+void SetMotorEStopDecel(uint8_t motor, uint32_t decel) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        m->EStopDecelMax(decel);
+    }
+}
+
+bool HasMotionCanceledEStop(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->AlertReg().bit.MotionCanceledSensorEStop;
+    }
+    return false;
+}
+
+// === Timing ===
 
 uint32_t Milliseconds() {
     return ClearCore::SysTiming::Instance().Milliseconds();
