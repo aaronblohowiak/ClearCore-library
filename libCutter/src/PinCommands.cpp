@@ -86,6 +86,10 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
     slot->digital_in.error_trigger_enabled = cmd.GetBoolOr("error_trigger", false);
     slot->digital_in.error_trigger_value = cmd.GetBoolOr("error_value", true);
     slot->digital_in.report_edges = edge_mode;
+
+    // Set hardware pin mode
+    CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_INPUT_DIGITAL);
+
     bool raw_val = CutterHal::ReadDigitalPin(slot->pin_index);
     slot->digital_in.last_value = slot->digital_in.invert ? !raw_val : raw_val;
 
@@ -123,6 +127,9 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
     slot->digital_out.default_max_ms = static_cast<uint32_t>(cmd.GetIntOr("max_raised_ms", 0));
     slot->digital_out.max_raised_ms = 0;
     slot->digital_out.raise_start_time = 0;
+
+    // Set hardware pin mode and initial value
+    CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_OUTPUT_DIGITAL);
     CutterHal::WriteDigitalPin(slot->pin_index, slot->digital_out.current_value);
 
     ctrl->Response().Ok();
@@ -158,6 +165,9 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
     // Reporting
     slot->analog_in.report_interval_ms = static_cast<uint32_t>(cmd.GetIntOr("report_interval", 0));
 
+    // Set hardware pin mode
+    CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_INPUT_ANALOG);
+
     slot->analog_in.last_value = CutterHal::ReadAnalogPin(slot->pin_index);
     slot->analog_in.last_report_time = CutterHal::Milliseconds();
 
@@ -187,6 +197,8 @@ static void CmdConfigurePwm(Controller* ctrl, const ParsedCommand& cmd) {
     slot->mode = PinMode::PWM;
     slot->pwm.duty = static_cast<uint16_t>(cmd.GetIntOr("duty", 0));
 
+    // Set hardware pin mode and duty
+    CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_OUTPUT_PWM);
     CutterHal::SetPwmDuty(slot->pin_index, slot->pwm.duty);
 
     ctrl->Response().Ok();
@@ -218,6 +230,8 @@ static void CmdConfigureHBridge(Controller* ctrl, const ParsedCommand& cmd) {
     slot->hbridge.tone_freq = 0;
     slot->hbridge.tone_amplitude = 0;
 
+    // Set hardware pin mode and value
+    CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_OUTPUT_H_BRIDGE);
     CutterHal::SetHBridgeValue(slot->pin_index, slot->hbridge.value);
 
     ctrl->Response().Ok();

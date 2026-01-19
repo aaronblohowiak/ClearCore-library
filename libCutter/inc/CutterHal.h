@@ -96,10 +96,19 @@ void StartTone(uint8_t pin, uint16_t freq, int16_t amplitude);
 void StopTone(uint8_t pin);
 
 /**
+    \brief Pin mode constants (matches ClearCore ConnectorModes enum)
+**/
+constexpr uint8_t PIN_MODE_INPUT_ANALOG = 1;
+constexpr uint8_t PIN_MODE_INPUT_DIGITAL = 2;
+constexpr uint8_t PIN_MODE_OUTPUT_DIGITAL = 4;
+constexpr uint8_t PIN_MODE_OUTPUT_H_BRIDGE = 5;
+constexpr uint8_t PIN_MODE_OUTPUT_PWM = 6;
+
+/**
     \brief Configure pin mode
 
     \param[in] pin Pin index
-    \param[in] mode Platform-specific mode value
+    \param[in] mode Pin mode constant (PIN_MODE_*)
 **/
 void ConfigurePinMode(uint8_t pin, uint8_t mode);
 
