@@ -189,6 +189,7 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
 
     // Motor operation commands
     if (strcmp(cmd.name, "enable") == 0 ||
+        strcmp(cmd.name, "enable_all") == 0 ||
         strcmp(cmd.name, "disable") == 0 ||
         strcmp(cmd.name, "move") == 0 ||
         strcmp(cmd.name, "move_velocity") == 0 ||
