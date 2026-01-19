@@ -314,7 +314,7 @@
         "max_raised_ms": { "type": "uint32", "required": false, "default": 0 }
       },
       "response_params": ["pin"],
-      "emits_events": ["error"]
+      "emits_events": ["pin_timeout"]
     },
 
     "configure_analog_in": {
@@ -508,6 +508,14 @@
       "params": {
         "pin": { "type": "pin_index" },
         "value": { "type": "int32" }
+      }
+    },
+    "pin_timeout": {
+      "description": "Digital output auto-lowered due to timeout",
+      "params": {
+        "pin": { "type": "pin_index" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
       }
     },
     "error": {

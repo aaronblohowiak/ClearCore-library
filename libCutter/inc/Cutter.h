@@ -57,7 +57,7 @@ namespace Cutter {
     CommandId is stored when initiating async operations:
     - Motor moves: Stored in MotorSlot::move_id, emitted in "done" and "soft_limit" events
     - Motor enable: Stored in MotorSlot::enable_id, emitted in "hlfb_timeout" error
-    - Pin timeout: Stored in DigitalOutState::set_id, emitted in "pin_timeout" error
+    - Pin timeout: Stored in DigitalOutState::set_id, emitted in "pin_timeout" event
 
     \par Event Correlation
     Host sends: `move motor=0 steps=1000 epoch=5 seq=42`

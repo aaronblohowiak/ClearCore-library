@@ -308,15 +308,16 @@ TEST_F(PinTest, DigitalOutputTimeout) {
     // Time passes but not enough
     ADVANCE_TIME(50);
     ctrl->Update();
-    EXPECT_NE(ctrl->GetState(), State::ERROR);
+    EXPECT_TRUE(ctrl->GetPin(0)->digital_out.current_value);  // Still high
 
     // Time passes beyond timeout
     ADVANCE_TIME(60);  // Total 110ms > 100ms
     ctrl->Update();
 
-    EXPECT_TRUE(serial.HasEvent("error"));
-    EXPECT_TRUE(serial.HasOutput("timeout"));
-    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+    // Pin should be auto-lowered, async event sent, but NOT an error
+    EXPECT_TRUE(serial.HasEvent("pin_timeout"));
+    EXPECT_FALSE(ctrl->GetPin(0)->digital_out.current_value);  // Now low
+    EXPECT_NE(ctrl->GetState(), State::ERROR);  // Not an error state
 }
 
 TEST_F(PinTest, DigitalOutputNoTimeoutWhenNoMaxMs) {
@@ -365,13 +366,13 @@ TEST_F(PinTest, DigitalOutputTimeoutResetsOnReRaise) {
     // Wait 80ms from second raise (would be 210ms from first raise)
     ADVANCE_TIME(80);
     ctrl->Update();
-    EXPECT_NE(ctrl->GetState(), State::ERROR);  // Should NOT timeout yet
+    EXPECT_TRUE(ctrl->GetPin(0)->digital_out.current_value);  // Should NOT timeout yet
 
     // Wait another 30ms (110ms from second raise) - NOW it should timeout
     ADVANCE_TIME(30);
     ctrl->Update();
-    EXPECT_EQ(ctrl->GetState(), State::ERROR);
-    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasEvent("pin_timeout"));
+    EXPECT_FALSE(ctrl->GetPin(0)->digital_out.current_value);  // Auto-lowered
 }
 
 TEST_F(PinTest, DigitalOutputReRaiseWithMaxMsZeroClearsTimeout) {
@@ -412,13 +413,13 @@ TEST_F(PinTest, DigitalOutputUsesConfiguredDefault) {
     // Wait 50ms - should not timeout yet
     ADVANCE_TIME(50);
     ctrl->Update();
-    EXPECT_NE(ctrl->GetState(), State::ERROR);
+    EXPECT_TRUE(ctrl->GetPin(0)->digital_out.current_value);
 
-    // Wait another 60ms (110ms total) - should timeout
+    // Wait another 60ms (110ms total) - should timeout and auto-lower
     ADVANCE_TIME(60);
     ctrl->Update();
-    EXPECT_EQ(ctrl->GetState(), State::ERROR);
-    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasEvent("pin_timeout"));
+    EXPECT_FALSE(ctrl->GetPin(0)->digital_out.current_value);
 }
 
 TEST_F(PinTest, DigitalOutputPerWriteOverridesDefault) {
@@ -434,12 +435,13 @@ TEST_F(PinTest, DigitalOutputPerWriteOverridesDefault) {
     // Wait 150ms - would timeout with default but not with override
     ADVANCE_TIME(150);
     ctrl->Update();
-    EXPECT_NE(ctrl->GetState(), State::ERROR);
+    EXPECT_TRUE(ctrl->GetPin(0)->digital_out.current_value);
 
-    // Wait another 60ms (210ms total) - NOW should timeout
+    // Wait another 60ms (210ms total) - NOW should timeout and auto-lower
     ADVANCE_TIME(60);
     ctrl->Update();
-    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+    EXPECT_TRUE(serial.HasEvent("pin_timeout"));
+    EXPECT_FALSE(ctrl->GetPin(0)->digital_out.current_value);
 }
 
 // === Digital Output On Error ===
@@ -542,9 +544,9 @@ TEST_F(PinTest, DigitalOutputTimeoutRollover) {
     g_fake.time_ms = 0x00000100;  // Rolled over
     ctrl->Update();
 
-    // 0x100 - 0xFFFFFF00 = 0x200 (512ms) > 100ms, should timeout
-    EXPECT_TRUE(serial.HasEvent("error"));
-    EXPECT_EQ(ctrl->GetState(), State::ERROR);
+    // 0x100 - 0xFFFFFF00 = 0x200 (512ms) > 100ms, should timeout and auto-lower
+    EXPECT_TRUE(serial.HasEvent("pin_timeout"));
+    EXPECT_FALSE(ctrl->GetPin(0)->digital_out.current_value);
 }
 
 TEST_F(PinTest, AnalogReportingRollover) {

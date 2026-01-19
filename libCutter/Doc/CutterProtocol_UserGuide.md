@@ -522,9 +522,9 @@ Configure a pin as digital output with optional timeout protection.
 <- ok pin=0
 ```
 
-If the pin stays high longer than `max_raised_ms`:
+If the pin stays high longer than `max_raised_ms`, it is automatically lowered and a notification is sent:
 ```
-<- error code=204 message="Pin timeout" pin=0
+<- pin_timeout pin=0 seq=1
 ```
 
 #### configure_analog_in
@@ -685,6 +685,7 @@ Events are sent asynchronously when certain conditions occur.
 | `edge` | Digital input edge detected | `pin`, `direction` |
 | `change` | Digital input changed | `pin`, `value` |
 | `analog` | Analog input report | `pin`, `value` |
+| `pin_timeout` | Digital output auto-lowered | `pin`, [`epoch`], `seq` |
 | `enable_all_complete` | All motors enabled/homed | [`epoch`], `seq` |
 
 ### Event Examples
@@ -697,6 +698,7 @@ Events are sent asynchronously when certain conditions occur.
 <- event type=limit motor=0 direction=neg position=0
 <- event type=edge pin=7 direction=rising
 <- event type=change pin=6 value=true
+<- event type=pin_timeout pin=0 seq=5
 ```
 
 ---
@@ -723,7 +725,7 @@ Events are sent asynchronously when certain conditions occur.
 | 201 | PIN_NOT_CONFIGURED | Pin not configured |
 | 202 | PIN_CAPABILITY | Pin doesn't support requested mode |
 | 203 | PIN_OVERCURRENT | Pin overcurrent fault |
-| 204 | PIN_TIMEOUT | Digital output timeout |
+| 204 | PIN_TIMEOUT | (Reserved - timeout sends pin_timeout event) |
 | 205 | PIN_ERROR_TRIGGER | Error trigger condition met |
 | 206 | ANALOG_THRESHOLD | Analog value outside threshold |
 | 207 | PIN_CONFLICT | Pin already in use |

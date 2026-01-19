@@ -315,22 +315,16 @@ void Controller::CheckPins() {
                 // Check timeout
                 if (pin.digital_out.max_raised_ms > 0 && pin.digital_out.current_value) {
                     if ((now - pin.digital_out.raise_start_time) > pin.digital_out.max_raised_ms) {
-                        m_stateMachine.EnterError(ErrorCode::PIN_TIMEOUT, "Digital output timeout");
-                        m_response.Event("error")
-                            .Param("code", static_cast<uint32_t>(ErrorCode::PIN_TIMEOUT))
+                        // Auto-lower the pin and send notification (not an error)
+                        CutterHal::WriteDigitalPin(pin.pin_index, false);
+                        pin.digital_out.current_value = false;
+                        pin.digital_out.max_raised_ms = 0;  // Clear timeout
+
+                        m_response.Event("pin_timeout")
                             .Param("pin", static_cast<int32_t>(pin.pin_index));
                         if (pin.digital_out.set_id.has_epoch) m_response.Param("epoch", pin.digital_out.set_id.epoch);
-                        m_response.Param("seq", pin.digital_out.set_id.seq)
-                            .Param("message", "Output timeout");
+                        m_response.Param("seq", pin.digital_out.set_id.seq);
                         SendResponse();
-                        // Stop all motors on error
-                        for (size_t j = 0; j < NUM_MOTORS; j++) {
-                            if (m_motors[j].type != MotorType::UNCONFIGURED) {
-                                CutterHal::StopMotor(m_motors[j].motor_index, true);
-                                m_motors[j].moving = false;
-                            }
-                        }
-                        return;
                     }
                 }
                 break;
