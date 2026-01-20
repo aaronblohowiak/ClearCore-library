@@ -168,7 +168,8 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
-    // Configure HLFB mode for ClearPath - always use ASG w/Measured Torque
+    // Configure HLFB mode for ClearPath (ASG w/Measured Torque)
+    // The motor must be configured to match in MSP (Motor Setup Program)
     CutterHal::SetHlfbMode(slot->motor_index, CutterHal::HLFB_MODE_HAS_BIPOLAR_PWM);
 
     // Transition to CONFIGURED if we were in CONNECTED
