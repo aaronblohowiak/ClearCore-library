@@ -128,6 +128,9 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         m_seenAnySeq = true;
     }
 
+    // Increment internal sequence counter for every valid command
+    m_nextSeq++;
+
     // Built-in commands (available in any state)
     if (strcmp(cmd.name, "ping") == 0) {
         CmdPing(cmd);
