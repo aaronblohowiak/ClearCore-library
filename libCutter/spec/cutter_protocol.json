@@ -113,22 +113,6 @@
       "response_params": ["next_seq"]
     },
 
-    "get_pins": {
-      "description": "Get all configured pins",
-      "valid_states": ["*"],
-      "params": {},
-      "response_params": ["count"],
-      "emits_events": ["pin"]
-    },
-
-    "get_motors": {
-      "description": "Get all configured motors",
-      "valid_states": ["*"],
-      "params": {},
-      "response_params": ["count"],
-      "emits_events": ["motor"]
-    },
-
     "get_status": {
       "description": "Get all configured pins and motors",
       "valid_states": ["*"],
@@ -447,7 +431,7 @@
 
   "events": {
     "pin": {
-      "description": "Pin status (from get_pins or get_status)",
+      "description": "Pin status (from get_status)",
       "params": {
         "pin": { "type": "pin_index" },
         "mode": { "type": "string" },
@@ -456,7 +440,7 @@
       }
     },
     "motor": {
-      "description": "Motor status (from get_motors or get_status)",
+      "description": "Motor status (from get_status)",
       "params": {
         "motor": { "type": "motor_index" },
         "type": { "type": "string" },
