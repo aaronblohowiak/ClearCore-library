@@ -164,6 +164,10 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         CmdGetMotors(cmd);
         return;
     }
+    if (strcmp(cmd.name, "get_status") == 0) {
+        CmdGetStatus(cmd);
+        return;
+    }
 
     // Pin configuration commands (require CONNECTED or higher)
     if (strcmp(cmd.name, "configure_digital_in") == 0 ||
@@ -856,6 +860,9 @@ void Controller::CmdGetPins(const ParsedCommand& cmd) {
     // If no pins configured, just send ok with count=0
     if (configured_count == 0) {
         m_response.Ok();
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
         if (cmd.has_seq) {
             m_response.Param("seq", cmd.seq);
         }
@@ -870,6 +877,9 @@ void Controller::CmdGetPins(const ParsedCommand& cmd) {
         if (pin.mode == PinMode::UNCONFIGURED) continue;
 
         m_response.Event("pin");
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
         if (cmd.has_seq) {
             m_response.Param("seq", cmd.seq);
         }
@@ -944,6 +954,9 @@ void Controller::CmdGetPins(const ParsedCommand& cmd) {
 
     // Send final ok with count
     m_response.Ok();
+    if (cmd.has_epoch) {
+        m_response.Param("epoch", cmd.epoch);
+    }
     if (cmd.has_seq) {
         m_response.Param("seq", cmd.seq);
     }
@@ -963,6 +976,9 @@ void Controller::CmdGetMotors(const ParsedCommand& cmd) {
     // If no motors configured, just send ok with count=0
     if (configured_count == 0) {
         m_response.Ok();
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
         if (cmd.has_seq) {
             m_response.Param("seq", cmd.seq);
         }
@@ -977,6 +993,9 @@ void Controller::CmdGetMotors(const ParsedCommand& cmd) {
         if (motor.type == MotorType::UNCONFIGURED) continue;
 
         m_response.Event("motor");
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
         if (cmd.has_seq) {
             m_response.Param("seq", cmd.seq);
         }
@@ -1019,10 +1038,188 @@ void Controller::CmdGetMotors(const ParsedCommand& cmd) {
 
     // Send final ok with count
     m_response.Ok();
+    if (cmd.has_epoch) {
+        m_response.Param("epoch", cmd.epoch);
+    }
     if (cmd.has_seq) {
         m_response.Param("seq", cmd.seq);
     }
     m_response.Param("count", static_cast<int32_t>(configured_count));
+    SendResponse();
+}
+
+void Controller::CmdGetStatus(const ParsedCommand& cmd) {
+    // Count configured pins
+    int pin_count = 0;
+    for (size_t i = 0; i < NUM_PINS; i++) {
+        if (m_pins[i].mode != PinMode::UNCONFIGURED) {
+            pin_count++;
+        }
+    }
+
+    // Count configured motors
+    int motor_count = 0;
+    for (size_t i = 0; i < NUM_MOTORS; i++) {
+        if (m_motors[i].type != MotorType::UNCONFIGURED) {
+            motor_count++;
+        }
+    }
+
+    // If nothing configured, just send ok with counts=0
+    if (pin_count == 0 && motor_count == 0) {
+        m_response.Ok();
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
+        if (cmd.has_seq) {
+            m_response.Param("seq", cmd.seq);
+        }
+        m_response.Param("pin_count", static_cast<int32_t>(0));
+        m_response.Param("motor_count", static_cast<int32_t>(0));
+        SendResponse();
+        return;
+    }
+
+    // Send one response per configured pin
+    for (size_t i = 0; i < NUM_PINS; i++) {
+        const PinSlot& pin = m_pins[i];
+        if (pin.mode == PinMode::UNCONFIGURED) continue;
+
+        m_response.Event("pin");
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
+        if (cmd.has_seq) {
+            m_response.Param("seq", cmd.seq);
+        }
+        m_response.Param("pin", static_cast<int32_t>(i));
+        m_response.Param("mode", PinModeName(pin.mode));
+
+        // Add mode-specific info
+        switch (pin.mode) {
+            case PinMode::DIGITAL_IN: {
+                bool raw_val = CutterHal::ReadDigitalPin(pin.pin_index);
+                bool val = pin.digital_in.invert ? !raw_val : raw_val;
+                m_response.Param("value", val);
+                m_response.Param("invert", pin.digital_in.invert);
+                if (pin.digital_in.report_edges != EdgeMode::NONE) {
+                    const char* edge_str = "none";
+                    switch (pin.digital_in.report_edges) {
+                        case EdgeMode::RISING:  edge_str = "rising"; break;
+                        case EdgeMode::FALLING: edge_str = "falling"; break;
+                        case EdgeMode::BOTH:    edge_str = "both"; break;
+                        default: break;
+                    }
+                    m_response.Param("report_edges", edge_str);
+                }
+                if (pin.digital_in.error_trigger_enabled) {
+                    m_response.Param("error_trigger", pin.digital_in.error_trigger_value);
+                }
+                break;
+            }
+            case PinMode::DIGITAL_OUT:
+                m_response.Param("value", pin.digital_out.current_value);
+                if (pin.digital_out.on_error_enabled) {
+                    m_response.Param("on_error", pin.digital_out.on_error_value);
+                }
+                if (pin.digital_out.default_max_ms > 0) {
+                    m_response.Param("max_ms", pin.digital_out.default_max_ms);
+                }
+                break;
+            case PinMode::ANALOG_IN: {
+                int16_t val = CutterHal::ReadAnalogPin(pin.pin_index);
+                m_response.Param("value", static_cast<int32_t>(val));
+                if (pin.analog_in.error_threshold_enabled) {
+                    m_response.Param("error_low", static_cast<int32_t>(pin.analog_in.error_threshold_low));
+                    m_response.Param("error_high", static_cast<int32_t>(pin.analog_in.error_threshold_high));
+                }
+                if (pin.analog_in.report_interval_ms > 0) {
+                    m_response.Param("report_interval", pin.analog_in.report_interval_ms);
+                }
+                break;
+            }
+            case PinMode::PWM:
+                m_response.Param("duty", static_cast<int32_t>(pin.pwm.duty));
+                break;
+            case PinMode::H_BRIDGE:
+                m_response.Param("value", static_cast<int32_t>(pin.hbridge.value));
+                if (pin.hbridge.tone_active) {
+                    m_response.Param("tone_freq", static_cast<int32_t>(pin.hbridge.tone_freq));
+                    m_response.Param("tone_amplitude", static_cast<int32_t>(pin.hbridge.tone_amplitude));
+                }
+                break;
+            case PinMode::END_STOP: {
+                bool raw_val = CutterHal::ReadDigitalPin(pin.pin_index);
+                bool triggered = (raw_val == (pin.end_stop.triggered_value != 0));
+                m_response.Param("triggered", triggered);
+                m_response.Param("triggered_value", static_cast<int32_t>(pin.end_stop.triggered_value));
+                break;
+            }
+            default:
+                break;
+        }
+        SendResponse();
+    }
+
+    // Send one response per configured motor
+    for (size_t i = 0; i < NUM_MOTORS; i++) {
+        const MotorSlot& motor = m_motors[i];
+        if (motor.type == MotorType::UNCONFIGURED) continue;
+
+        m_response.Event("motor");
+        if (cmd.has_epoch) {
+            m_response.Param("epoch", cmd.epoch);
+        }
+        if (cmd.has_seq) {
+            m_response.Param("seq", cmd.seq);
+        }
+        m_response.Param("motor", static_cast<int32_t>(i));
+        m_response.Param("type", MotorTypeName(motor.type));
+        m_response.Param("enabled", motor.enabled);
+        m_response.Param("moving", motor.moving);
+        m_response.Param("position", CutterHal::GetMotorPosition(motor.motor_index));
+        m_response.Param("homed", motor.homed);
+        m_response.Param("homing_mode", HomingModeName(motor.homing_mode));
+        m_response.Param("vel_max", motor.vel_max);
+        m_response.Param("accel_max", motor.accel_max);
+
+        // Add soft limit info if enabled
+        if (motor.soft_limits_enabled) {
+            m_response.Param("soft_limit_min", motor.soft_limit_min);
+            m_response.Param("soft_limit_max", motor.soft_limit_max);
+        }
+
+        // Add velocity move indicator
+        if (motor.moving && motor.velocity_move) {
+            m_response.Param("velocity_move", true);
+        }
+
+        // Add homing state if homing is in progress
+        if (motor.homing_state != HomingState::IDLE &&
+            motor.homing_state != HomingState::COMPLETE) {
+            const char* homing_state_str = "unknown";
+            switch (motor.homing_state) {
+                case HomingState::SEEKING:     homing_state_str = "seeking"; break;
+                case HomingState::BACKING_OFF: homing_state_str = "backing_off"; break;
+                case HomingState::LATCHING:    homing_state_str = "latching"; break;
+                default: break;
+            }
+            m_response.Param("homing_state", homing_state_str);
+        }
+
+        SendResponse();
+    }
+
+    // Send final ok with counts
+    m_response.Ok();
+    if (cmd.has_epoch) {
+        m_response.Param("epoch", cmd.epoch);
+    }
+    if (cmd.has_seq) {
+        m_response.Param("seq", cmd.seq);
+    }
+    m_response.Param("pin_count", static_cast<int32_t>(pin_count));
+    m_response.Param("motor_count", static_cast<int32_t>(motor_count));
     SendResponse();
 }
 

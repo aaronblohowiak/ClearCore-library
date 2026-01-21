@@ -113,6 +113,30 @@
       "response_params": ["next_seq"]
     },
 
+    "get_pins": {
+      "description": "Get all configured pins",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["count"],
+      "emits_events": ["pin"]
+    },
+
+    "get_motors": {
+      "description": "Get all configured motors",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["count"],
+      "emits_events": ["motor"]
+    },
+
+    "get_status": {
+      "description": "Get all configured pins and motors",
+      "valid_states": ["*"],
+      "params": {},
+      "response_params": ["pin_count", "motor_count"],
+      "emits_events": ["pin", "motor"]
+    },
+
     "configure_sdsk": {
       "description": "Configure ClearPath-SD/SK motor",
       "valid_states": ["CONNECTED", "CONFIGURED", "READY"],
@@ -422,6 +446,31 @@
   },
 
   "events": {
+    "pin": {
+      "description": "Pin status (from get_pins or get_status)",
+      "params": {
+        "pin": { "type": "pin_index" },
+        "mode": { "type": "string" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32", "optional": true }
+      }
+    },
+    "motor": {
+      "description": "Motor status (from get_motors or get_status)",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "type": { "type": "string" },
+        "enabled": { "type": "bool" },
+        "moving": { "type": "bool" },
+        "position": { "type": "int32" },
+        "homed": { "type": "bool" },
+        "homing_mode": { "type": "string" },
+        "vel_max": { "type": "int32" },
+        "accel_max": { "type": "int32" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32", "optional": true }
+      }
+    },
     "done": {
       "description": "Motor move completed",
       "params": {
