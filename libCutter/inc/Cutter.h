@@ -510,6 +510,8 @@ private:
     void CmdVersion(const ParsedCommand& cmd);
     void CmdEmergencyStop(const ParsedCommand& cmd);
     void CmdGetNextSeq(const ParsedCommand& cmd);
+    void CmdGetPins(const ParsedCommand& cmd);
+    void CmdGetMotors(const ParsedCommand& cmd);
 };
 
 }  // namespace Cutter
