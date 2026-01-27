@@ -81,6 +81,13 @@ TEST_F(HomingTest, HomeRequiresEnabled) {
 TEST_F(HomingTest, HomingSequenceComplete) {
     serial.SendLine("home seq=10 motor=0");
     ctrl->Update();
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Phase 1: Seeking - motor moves toward limit switch
@@ -113,7 +120,9 @@ TEST_F(HomingTest, HomingSequenceComplete) {
 
     EXPECT_TRUE(serial.HasEvent("homed"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=10"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
     EXPECT_EQ(ctrl->GetState(), State::READY);
 }
 

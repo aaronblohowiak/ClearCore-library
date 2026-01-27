@@ -50,8 +50,10 @@ namespace Cutter {
 /**
     \brief Command identifier for correlating async events to commands
 
-    Stores epoch and seq pair from commands for later use in events.
-    Events emit both values when has_epoch is true, otherwise just seq.
+    Stores epoch and seq pair assigned internally by the controller.
+    Every command is assigned a unique seq (incrementing counter) and the
+    current epoch. User-supplied epoch/seq in commands are for verification
+    only (sync checking), not for identifying the command.
 
     \par Usage
     CommandId is stored when initiating async operations:
@@ -60,14 +62,14 @@ namespace Cutter {
     - Pin timeout: Stored in DigitalOutState::set_id, emitted in "pin_timeout" event
 
     \par Event Correlation
-    Host sends: `move motor=0 steps=1000 epoch=5 seq=42`
-    Cutter responds: `event type=done motor=0 epoch=5 seq=42 position=1000`
+    Host sends: `move motor=0 steps=1000`
+    Cutter responds: `ok epoch=0 seq=5 motor=0`
+    Later: `event type=done motor=0 epoch=0 seq=5 position=1000`
     This allows the host to match async events back to the originating command.
 **/
 struct CommandId {
     uint32_t epoch;
     uint32_t seq;
-    bool has_epoch;     ///< Whether epoch was provided in original command
 };
 
 // Forward declarations
@@ -399,6 +401,17 @@ public:
     ResponseWriter& Response() { return m_response; }
 
     /**
+        \brief Get the command ID for the currently executing command
+
+        Every command is assigned a unique internal CommandId containing
+        the current epoch and an incrementing sequence number. This ID
+        should be used for all responses and stored for async event correlation.
+
+        \return The internal CommandId for the current command
+    **/
+    const CommandId& GetCurrentCommandId() const { return m_currentCommandId; }
+
+    /**
         \brief Send the current response buffer
     **/
     void SendResponse();
@@ -492,9 +505,10 @@ private:
     void CheckMotors();
 
     // Sequence tracking
-    uint32_t m_nextSeq;
-    uint32_t m_maxSeenSeq;          ///< Highest seq seen (for stale detection)
-    bool m_seenAnySeq;              ///< Whether any seq has been received
+    uint32_t m_nextSeq;             ///< Next internal seq to assign
+    uint32_t m_maxSeenSeq;          ///< Highest user-supplied seq seen (for stale detection)
+    bool m_seenAnySeq;              ///< Whether any user-supplied seq has been received
+    CommandId m_currentCommandId;   ///< Internal ID assigned to current command
 
     // Enable-all state (sequential enable and homing)
     bool m_enableAllActive;         ///< enable_all command in progress

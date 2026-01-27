@@ -155,8 +155,16 @@ TEST_F(MotorTest, MoveAbsolute) {
 TEST_F(MotorTest, MoveCompletion) {
     ConfigureAndEnableStepper();
 
+    // User-supplied seq=42 is for verification, internal seq is assigned
     serial.SendLine("move seq=42 motor=0 steps=1000");
     ctrl->Update();
+
+    // Get the internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Simulate move completion
@@ -165,7 +173,10 @@ TEST_F(MotorTest, MoveCompletion) {
 
     EXPECT_TRUE(serial.HasEvent("done"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=42"));
+    // Done event includes internal seq, not user-supplied
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
     EXPECT_EQ(ctrl->GetState(), State::READY);
 }
@@ -254,6 +265,13 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMax) {
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_EQ(ctrl->GetState(), State::WORKING);
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Simulate motor exceeding soft limit (strict inequality: must go past)
@@ -263,7 +281,9 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMax) {
     // Should emit soft_limit event and stop
     EXPECT_TRUE(serial.HasEvent("soft_limit"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=50"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
     EXPECT_TRUE(serial.HasOutput("position=1001"));
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
     EXPECT_EQ(ctrl->GetState(), State::READY);
@@ -285,6 +305,13 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMin) {
     serial.SendLine("move_velocity seq=51 motor=0 velocity=-1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Simulate motor exceeding soft limit min (strict inequality: must go past)
@@ -293,7 +320,9 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMin) {
 
     // Should emit soft_limit event and stop
     EXPECT_TRUE(serial.HasEvent("soft_limit"));
-    EXPECT_TRUE(serial.HasOutput("seq=51"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
 }
 
@@ -543,20 +572,30 @@ TEST_F(MotorTest, DoneEventIncludesEpoch) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Move with epoch=0 (matches initial state) and seq
+    // Move with user-supplied epoch=0 and seq=99 (for verification)
+    // Response and event will use internal seq
     serial.SendLine("move epoch=0 seq=99 motor=0 steps=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Complete the move
     g_fake.motor_steps_complete[0] = true;
     ctrl->Update();
 
-    // Done event should include both epoch and seq
+    // Done event should include internal epoch and seq
     EXPECT_TRUE(serial.HasEvent("done"));
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=99"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
 }
 
 TEST_F(MotorTest, SoftLimitEventIncludesEpoch) {
@@ -568,20 +607,29 @@ TEST_F(MotorTest, SoftLimitEventIncludesEpoch) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Velocity move with epoch=0 (matches initial state) and seq
+    // Velocity move with user-supplied epoch=0 and seq=55 (for verification)
     serial.SendLine("move_velocity epoch=0 seq=55 motor=0 velocity=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Exceed soft limit
     g_fake.motor_position[0] = 1001;
     ctrl->Update();
 
-    // Soft limit event should include both epoch and seq
+    // Soft limit event should include internal epoch and seq
     EXPECT_TRUE(serial.HasEvent("soft_limit"));
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=55"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
 }
 
 // === SDSK Move Completion with HLFB ===
@@ -779,21 +827,30 @@ TEST_F(MotorTest, EStopTriggerDuringMove) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Start a move
+    // Start a move with user-supplied seq=42 (for verification)
     serial.SendLine("move seq=42 motor=0 steps=10000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Trigger E-Stop (simulates hardware stopping motor)
     TRIGGER_ESTOP(0);
     ctrl->Update();
 
-    // Should emit estop event with position and seq
+    // Should emit estop event with position and internal seq
     EXPECT_TRUE(serial.HasEvent("estop"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=42"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
 }
 
@@ -852,17 +909,180 @@ TEST_F(MotorTest, EStopEventIncludesEpoch) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Start a move with epoch
+    // Start a move with user-supplied epoch and seq (for verification)
     serial.SendLine("move epoch=0 seq=77 motor=0 steps=10000");
     ctrl->Update();
+
+    // Get internal seq from response
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
     // Trigger E-Stop
     TRIGGER_ESTOP(0);
     ctrl->Update();
 
-    // Event should include epoch and seq
+    // Event should include internal epoch and seq
     EXPECT_TRUE(serial.HasEvent("estop"));
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
-    EXPECT_TRUE(serial.HasOutput("seq=77"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
+}
+
+// === Internal Command ID Tests ===
+// These tests verify that every command gets an internal seq/epoch
+// regardless of whether the user supplied them
+
+TEST_F(MotorTest, InternalSeqIncrements) {
+    // Send commands without user-supplied seq/epoch
+    // Each should get incrementing internal seq in response
+
+    // Note: ping in SetUp uses seq=1, so first command here gets seq=2
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=2"));
+    serial.ClearOutput();
+
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=3"));
+    serial.ClearOutput();
+
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=4"));
+}
+
+TEST_F(MotorTest, ConfigureCommandsGetInternalSeq) {
+    // Configure commands without user seq should still get internal seq
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=2"));  // After ping in SetUp
+    serial.ClearOutput();
+
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=3"));
+}
+
+TEST_F(MotorTest, MoveWithoutUserSeqGetsInternalSeq) {
+    ConfigureAndEnableStepper();
+    serial.ClearOutput();
+
+    // Move without user-supplied seq - should get internal seq
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+
+    // ok response should include internal epoch and seq
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    // seq depends on how many commands were sent in setup
+    std::string output = serial.GetOutput();
+    EXPECT_TRUE(output.find("seq=") != std::string::npos);
+
+    // Remember what seq was assigned
+    // Find seq in output for verification in done event
+    serial.ClearOutput();
+
+    // Complete the move
+    COMPLETE_MOVE(0);
+    ctrl->Update();
+
+    // Done event should have same epoch and seq as the move command
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    // seq should match what move command got
+}
+
+TEST_F(MotorTest, DoneEventUsesInternalSeqFromMoveCommand) {
+    ConfigureAndEnableStepper();
+    serial.ClearOutput();
+
+    // Get next_seq to know what the move will be assigned
+    serial.SendLine("get_next_seq");
+    ctrl->Update();
+    // Extract next_seq value from response
+    std::string output = serial.GetOutput();
+    EXPECT_TRUE(output.find("next_seq=") != std::string::npos);
+    serial.ClearOutput();
+
+    // Move without user seq
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+    output = serial.GetOutput();
+
+    // Extract the seq that was assigned to this command
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t assigned_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &assigned_seq);
+    EXPECT_GT(assigned_seq, 0u);
+    serial.ClearOutput();
+
+    // Complete the move
+    COMPLETE_MOVE(0);
+    ctrl->Update();
+
+    // Done event should have same seq as the move command's internal seq
+    EXPECT_TRUE(serial.HasEvent("done"));
+    output = serial.GetOutput();
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", assigned_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq))
+        << "Expected seq=" << assigned_seq << " in done event, got: " << output;
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+}
+
+TEST_F(MotorTest, SoftLimitEventUsesInternalSeq) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=none soft_limits=1 soft_min=0 soft_max=1000");
+    ctrl->Update();
+    serial.SendLine("configure_endstop pin=6");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Start velocity move WITHOUT user seq/epoch
+    serial.SendLine("move_velocity motor=0 velocity=1000");
+    ctrl->Update();
+
+    // Extract the internal seq assigned
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t assigned_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &assigned_seq);
+    serial.ClearOutput();
+
+    // Exceed soft limit
+    g_fake.motor_position[0] = 1001;
+    ctrl->Update();
+
+    // Soft limit event should use the internal seq from move_velocity
+    EXPECT_TRUE(serial.HasEvent("soft_limit"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", assigned_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+}
+
+TEST_F(MotorTest, ErrorResponsesIncludeInternalSeq) {
+    // Error responses should also include internal epoch/seq
+    serial.SendLine("move motor=99 steps=1000");  // Invalid motor
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    EXPECT_TRUE(serial.HasOutput("seq=2"));  // After ping in SetUp
 }

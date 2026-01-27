@@ -49,10 +49,12 @@ TEST_F(IntegrationTest, FullMotionCycle) {
     EXPECT_EQ(ctrl->GetState(), State::READY);
     serial.ClearOutput();
 
-    // Start move
+    // Start move (user seq=1 is for verification, internal seq=4 is used)
     serial.SendLine("move seq=1 motor=0 steps=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
+    // Internal seq is assigned (command 4: ping=1, configure=2, enable=3, move=4)
+    EXPECT_TRUE(serial.HasOutput("seq=4"));
     EXPECT_EQ(ctrl->GetState(), State::WORKING);
     serial.ClearOutput();
 
@@ -60,7 +62,9 @@ TEST_F(IntegrationTest, FullMotionCycle) {
     COMPLETE_MOVE(0);
     ctrl->Update();
     EXPECT_TRUE(serial.HasEvent("done"));
-    EXPECT_TRUE(serial.HasOutput("seq=1"));
+    // Done event uses internal seq from move command
+    EXPECT_TRUE(serial.HasOutput("seq=4"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
     EXPECT_EQ(ctrl->GetState(), State::READY);
 }
 
@@ -164,18 +168,24 @@ TEST_F(IntegrationTest, ErrorRecoveryCycle) {
     EXPECT_EQ(ctrl->GetMotor(0)->type, MotorType::UNCONFIGURED);
 }
 
-// === Sequence Number Round Trip ===
+// === Internal Sequence Number ===
+// Every command gets an internal seq, not the user-supplied one
+// User-supplied seq is only for verification (staleness check)
 
 TEST_F(IntegrationTest, SeqRoundTrip) {
     serial.SendLine("ping");
     ctrl->Update();
     serial.ClearOutput();
 
+    // User-supplied seq=12345 is for verification only
+    // Response includes internal seq (which increments from 1)
     serial.SendLine("ping seq=12345");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("ok"));
-    EXPECT_TRUE(serial.HasOutput("seq=12345"));
+    EXPECT_TRUE(serial.HasOutput("epoch=0"));
+    // Response includes internal seq=2 (ping in setup was seq=1)
+    EXPECT_TRUE(serial.HasOutput("seq=2"));
 }
 
 // === Multiple Commands in Sequence ===

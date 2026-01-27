@@ -17,6 +17,7 @@ Controller::Controller(ISerial* serial)
     , m_nextSeq(1)
     , m_maxSeenSeq(0)
     , m_seenAnySeq(false)
+    , m_currentCommandId{}
     , m_enableAllActive(false)
     , m_enableAllId{}
     , m_homingOrder{}
@@ -110,8 +111,9 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         return;
     }
 
-    // Check seq for staleness (using serial number arithmetic for wrap-around)
+    // Check user-supplied seq for staleness (using serial number arithmetic for wrap-around)
     // A seq is stale if it's <= the max we've seen (accounting for wrap)
+    // User-supplied seq/epoch are for verification/sync only, not command identification
     if (cmd.has_seq) {
         if (m_seenAnySeq) {
             int32_t diff = static_cast<int32_t>(cmd.seq - m_maxSeenSeq);
@@ -128,7 +130,10 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         m_seenAnySeq = true;
     }
 
-    // Increment internal sequence counter for every valid command
+    // Assign internal command ID before processing
+    // Every command gets a unique internal seq and the current epoch
+    m_currentCommandId.epoch = m_stateMachine.GetEpoch();
+    m_currentCommandId.seq = m_nextSeq;
     m_nextSeq++;
 
     // Built-in commands (available in any state)
@@ -329,9 +334,9 @@ void Controller::CheckPins() {
                         pin.digital_out.max_raised_ms = 0;  // Clear timeout
 
                         m_response.Event("pin_timeout")
-                            .Param("pin", static_cast<int32_t>(pin.pin_index));
-                        if (pin.digital_out.set_id.has_epoch) m_response.Param("epoch", pin.digital_out.set_id.epoch);
-                        m_response.Param("seq", pin.digital_out.set_id.seq);
+                            .Param("pin", static_cast<int32_t>(pin.pin_index))
+                            .Param("epoch", pin.digital_out.set_id.epoch)
+                            .Param("seq", pin.digital_out.set_id.seq);
                         SendResponse();
                     }
                 }
@@ -449,11 +454,9 @@ void Controller::CheckMotors() {
                                              "Motor HLFB timeout");
                     m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::HLFB_TIMEOUT))
-                        .Param("motor", static_cast<int32_t>(motor.motor_index));
-                    if (motor.enable_id.has_epoch) {
-                        m_response.Param("epoch", motor.enable_id.epoch);
-                    }
-                    m_response.Param("seq", motor.enable_id.seq);
+                        .Param("motor", static_cast<int32_t>(motor.motor_index))
+                        .Param("epoch", motor.enable_id.epoch)
+                        .Param("seq", motor.enable_id.seq);
                     SendResponse();
                     m_enableAllActive = false;  // Cancel enable_all on error
                 }
@@ -482,9 +485,9 @@ void Controller::CheckMotors() {
             motor.moving = false;
             m_response.Event("estop")
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
-                .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
-            if (motor.move_id.has_epoch) m_response.Param("epoch", motor.move_id.epoch);
-            m_response.Param("seq", motor.move_id.seq);
+                .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
+                .Param("epoch", motor.move_id.epoch)
+                .Param("seq", motor.move_id.seq);
             SendResponse();
 
             // Check if any motors still moving
@@ -513,9 +516,9 @@ void Controller::CheckMotors() {
                 CutterHal::StopMotor(motor.motor_index, true);
                 motor.moving = false;
                 m_response.Event("soft_limit")
-                    .Param("motor", static_cast<int32_t>(motor.motor_index));
-                if (motor.move_id.has_epoch) m_response.Param("epoch", motor.move_id.epoch);
-                m_response.Param("seq", motor.move_id.seq)
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("epoch", motor.move_id.epoch)
+                    .Param("seq", motor.move_id.seq)
                     .Param("position", pos);
                 SendResponse();
 
@@ -548,9 +551,9 @@ void Controller::CheckMotors() {
             if (move_complete) {
                 motor.moving = false;
                 m_response.Event("done")
-                    .Param("motor", static_cast<int32_t>(motor.motor_index));
-                if (motor.move_id.has_epoch) m_response.Param("epoch", motor.move_id.epoch);
-                m_response.Param("seq", motor.move_id.seq)
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("epoch", motor.move_id.epoch)
+                    .Param("seq", motor.move_id.seq)
                     .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
                 SendResponse();
 
@@ -682,9 +685,9 @@ void Controller::StartNextHoming() {
         }
 
         m_response.Event("homing_started")
-            .Param("motor", static_cast<int32_t>(motor_idx));
-        if (m_enableAllId.has_epoch) m_response.Param("epoch", m_enableAllId.epoch);
-        m_response.Param("seq", m_enableAllId.seq);
+            .Param("motor", static_cast<int32_t>(motor_idx))
+            .Param("epoch", m_enableAllId.epoch)
+            .Param("seq", m_enableAllId.seq);
         SendResponse();
 
         return;  // Wait for this motor to finish homing
@@ -692,9 +695,9 @@ void Controller::StartNextHoming() {
 
     // All motors homed - emit completion event
     m_enableAllActive = false;
-    m_response.Event("all_homed");
-    if (m_enableAllId.has_epoch) m_response.Param("epoch", m_enableAllId.epoch);
-    m_response.Param("seq", m_enableAllId.seq)
+    m_response.Event("all_homed")
+        .Param("epoch", m_enableAllId.epoch)
+        .Param("seq", m_enableAllId.seq)
         .Param("count", static_cast<int32_t>(m_homingCount));
     SendResponse();
 }
@@ -702,14 +705,15 @@ void Controller::StartNextHoming() {
 // Built-in commands
 
 void Controller::CmdPing(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     m_response.Ok();
-    if (cmd.has_seq) {
-        m_response.Param("seq", cmd.seq);
-    }
+    m_response.Param("epoch", m_currentCommandId.epoch);
+    m_response.Param("seq", m_currentCommandId.seq);
     SendResponse();
 }
 
 void Controller::CmdReset(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     if (m_stateMachine.GetState() == State::ERROR) {
         m_stateMachine.Reset();
 
@@ -729,27 +733,24 @@ void Controller::CmdReset(const ParsedCommand& cmd) {
         }
 
         m_response.Ok();
-        if (cmd.has_seq) {
-            m_response.Param("seq", cmd.seq);
-        }
-        m_response.Param("epoch", m_stateMachine.GetEpoch());
+        m_response.Param("epoch", m_currentCommandId.epoch);
+        m_response.Param("seq", m_currentCommandId.seq);
+        m_response.Param("new_epoch", m_stateMachine.GetEpoch());
     } else {
         m_response.Error(static_cast<uint32_t>(ErrorCode::INVALID_STATE),
                        "Not in error state");
-        if (cmd.has_seq) {
-            m_response.Param("seq", cmd.seq);
-        }
+        m_response.Param("epoch", m_currentCommandId.epoch);
+        m_response.Param("seq", m_currentCommandId.seq);
     }
     SendResponse();
 }
 
 void Controller::CmdStatus(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     m_response.Ok();
-    if (cmd.has_seq) {
-        m_response.Param("seq", cmd.seq);
-    }
+    m_response.Param("epoch", m_currentCommandId.epoch);
+    m_response.Param("seq", m_currentCommandId.seq);
     m_response.Param("state", StateName(m_stateMachine.GetState()));
-    m_response.Param("epoch", m_stateMachine.GetEpoch());
 
     if (m_stateMachine.GetState() == State::ERROR) {
         m_response.Param("error_code", static_cast<uint32_t>(m_stateMachine.GetErrorCode()));
@@ -759,16 +760,17 @@ void Controller::CmdStatus(const ParsedCommand& cmd) {
 }
 
 void Controller::CmdVersion(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     m_response.Ok();
-    if (cmd.has_seq) {
-        m_response.Param("seq", cmd.seq);
-    }
+    m_response.Param("epoch", m_currentCommandId.epoch);
+    m_response.Param("seq", m_currentCommandId.seq);
     m_response.Param("version", CUTTER_VERSION);
     m_response.Param("protocol", PROTOCOL_VERSION);
     SendResponse();
 }
 
 void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     // Stop all motors immediately
     for (size_t i = 0; i < NUM_MOTORS; i++) {
         if (m_motors[i].type != MotorType::UNCONFIGURED) {
@@ -781,26 +783,27 @@ void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
     // Enter error state
     m_stateMachine.EnterError(ErrorCode::EMERGENCY_STOP, "Emergency stop");
 
-    // Send response
+    // Send response with command's assigned ID and the new epoch after error
     m_response.Ok();
-    if (cmd.has_seq) {
-        m_response.Param("seq", cmd.seq);
-    }
-    m_response.Param("epoch", m_stateMachine.GetEpoch());
+    m_response.Param("epoch", m_currentCommandId.epoch);
+    m_response.Param("seq", m_currentCommandId.seq);
+    m_response.Param("new_epoch", m_stateMachine.GetEpoch());
     SendResponse();
 
     // Send error event
     m_response.Event("error")
         .Param("code", static_cast<uint32_t>(ErrorCode::EMERGENCY_STOP))
+        .Param("epoch", m_currentCommandId.epoch)
+        .Param("seq", m_currentCommandId.seq)
         .Param("message", "Emergency stop activated");
     SendResponse();
 }
 
 void Controller::CmdGetNextSeq(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     m_response.Ok();
-    if (cmd.has_seq) {
-        m_response.Param("seq", cmd.seq);
-    }
+    m_response.Param("epoch", m_currentCommandId.epoch);
+    m_response.Param("seq", m_currentCommandId.seq);
     m_response.Param("next_seq", m_nextSeq);
     SendResponse();
 }
@@ -841,6 +844,7 @@ static const char* HomingModeName(HomingMode mode) {
 }
 
 void Controller::CmdGetStatus(const ParsedCommand& cmd) {
+    (void)cmd;  // User-supplied params not needed for response
     // Count configured pins
     int pin_count = 0;
     for (size_t i = 0; i < NUM_PINS; i++) {
@@ -860,12 +864,8 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
     // If nothing configured, just send ok with counts=0
     if (pin_count == 0 && motor_count == 0) {
         m_response.Ok();
-        if (cmd.has_epoch) {
-            m_response.Param("epoch", cmd.epoch);
-        }
-        if (cmd.has_seq) {
-            m_response.Param("seq", cmd.seq);
-        }
+        m_response.Param("epoch", m_currentCommandId.epoch);
+        m_response.Param("seq", m_currentCommandId.seq);
         m_response.Param("pin_count", static_cast<int32_t>(0));
         m_response.Param("motor_count", static_cast<int32_t>(0));
         SendResponse();
@@ -878,12 +878,8 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
         if (pin.mode == PinMode::UNCONFIGURED) continue;
 
         m_response.Event("pin");
-        if (cmd.has_epoch) {
-            m_response.Param("epoch", cmd.epoch);
-        }
-        if (cmd.has_seq) {
-            m_response.Param("seq", cmd.seq);
-        }
+        m_response.Param("epoch", m_currentCommandId.epoch);
+        m_response.Param("seq", m_currentCommandId.seq);
         m_response.Param("pin", static_cast<int32_t>(i));
         m_response.Param("mode", PinModeName(pin.mode));
 
@@ -959,12 +955,8 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
         if (motor.type == MotorType::UNCONFIGURED) continue;
 
         m_response.Event("motor");
-        if (cmd.has_epoch) {
-            m_response.Param("epoch", cmd.epoch);
-        }
-        if (cmd.has_seq) {
-            m_response.Param("seq", cmd.seq);
-        }
+        m_response.Param("epoch", m_currentCommandId.epoch);
+        m_response.Param("seq", m_currentCommandId.seq);
         m_response.Param("motor", static_cast<int32_t>(i));
         m_response.Param("type", MotorTypeName(motor.type));
         m_response.Param("enabled", motor.enabled);
@@ -1004,12 +996,8 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
 
     // Send final ok with counts
     m_response.Ok();
-    if (cmd.has_epoch) {
-        m_response.Param("epoch", cmd.epoch);
-    }
-    if (cmd.has_seq) {
-        m_response.Param("seq", cmd.seq);
-    }
+    m_response.Param("epoch", m_currentCommandId.epoch);
+    m_response.Param("seq", m_currentCommandId.seq);
     m_response.Param("pin_count", static_cast<int32_t>(pin_count));
     m_response.Param("motor_count", static_cast<int32_t>(motor_count));
     SendResponse();

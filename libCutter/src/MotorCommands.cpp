@@ -11,10 +11,11 @@ namespace Cutter {
 // Helper to send error response
 static void SendError(Controller* ctrl, const ParsedCommand& cmd,
                       ErrorCode code, const char* message) {
+    (void)cmd;  // User-supplied params not used; we use internal command ID
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Error(static_cast<uint32_t>(code), message);
-    if (cmd.has_seq) {
-        ctrl->Response().Param("seq", cmd.seq);
-    }
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->SendResponse();
 }
 
@@ -177,8 +178,10 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
         ctrl->GetStateMachine().TransitionTo(State::CONFIGURED);
     }
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -317,8 +320,10 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
         ctrl->GetStateMachine().TransitionTo(State::CONFIGURED);
     }
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -344,9 +349,10 @@ static void CmdEnable(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     slot->enabled = true;
     slot->enable_start_time = CutterHal::Milliseconds();
-    slot->enable_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
+    slot->enable_id = id;
     CutterHal::EnableMotor(slot->motor_index, true);
 
     // Transition to ENABLING to wait for HLFB
@@ -371,7 +377,8 @@ static void CmdEnable(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -393,8 +400,10 @@ static void CmdDisable(Controller* ctrl, const ParsedCommand& cmd) {
     slot->moving = false;
     CutterHal::EnableMotor(slot->motor_index, false);
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -465,9 +474,10 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     // Apply per-move parameters
     CutterHal::SetMotorParams(slot->motor_index, vel, accel);
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     slot->moving = true;
     slot->velocity_move = false;
-    slot->move_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
+    slot->move_id = id;
 
     if (is_relative) {
         CutterHal::MoveRelative(slot->motor_index, steps);
@@ -484,7 +494,8 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -527,9 +538,10 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
     // Apply per-move acceleration
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, accel);
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     slot->moving = true;
     slot->velocity_move = true;
-    slot->move_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
+    slot->move_id = id;
     CutterHal::MoveVelocity(slot->motor_index, velocity);
 
     // Restore motor defaults
@@ -541,7 +553,8 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -563,8 +576,10 @@ static void CmdStop(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::StopMotor(slot->motor_index, immediate);
     slot->moving = false;
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->Response().Param("position", CutterHal::GetMotorPosition(slot->motor_index));
     ctrl->SendResponse();
@@ -591,8 +606,10 @@ static void CmdSetPosition(Controller* ctrl, const ParsedCommand& cmd) {
 
     CutterHal::SetMotorPosition(slot->motor_index, position);
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->Response().Param("position", position);
     ctrl->SendResponse();
@@ -628,8 +645,10 @@ static void CmdSetMotorClock(Controller* ctrl, const ParsedCommand& cmd) {
 
     CutterHal::SetMotorClockRate(rate);
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("rate", rate_str);
     ctrl->SendResponse();
 }
@@ -695,8 +714,10 @@ static void CmdConfigureEStop(Controller* ctrl, const ParsedCommand& cmd) {
         }
     }
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("pin", pin);
     if (all_motors) {
         ctrl->Response().Param("motor", "all");
@@ -723,8 +744,10 @@ static void CmdClearAlerts(Controller* ctrl, const ParsedCommand& cmd) {
 
     CutterHal::ClearMotorAlerts(static_cast<uint8_t>(motor));
 
+    const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -769,7 +792,8 @@ static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     // Start homing sequence
-    StartHoming(slot, {cmd.epoch, cmd.seq, cmd.has_epoch});
+    const CommandId& id = ctrl->GetCurrentCommandId();
+    StartHoming(slot, id);
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -777,7 +801,8 @@ static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("motor", motor);
     ctrl->SendResponse();
 }
@@ -827,12 +852,12 @@ static void CmdEnableAll(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Enable all motors in priority order
     // Note: This is synchronous enable - the actual homing happens in CheckMotors
-    CommandId enable_id = {cmd.epoch, cmd.seq, cmd.has_epoch};
+    const CommandId& id = ctrl->GetCurrentCommandId();
     for (size_t i = 0; i < motor_count; i++) {
         MotorSlot* slot = ctrl->GetMotor(motors[i].index);
         slot->enabled = true;
         slot->enable_start_time = CutterHal::Milliseconds();
-        slot->enable_id = enable_id;
+        slot->enable_id = id;
         slot->homed = false;
         CutterHal::EnableMotor(slot->motor_index, true);
     }
@@ -841,10 +866,11 @@ static void CmdEnableAll(Controller* ctrl, const ParsedCommand& cmd) {
     ctrl->GetStateMachine().TransitionTo(State::ENABLING);
 
     // Store the command ID for enable_all completion event
-    ctrl->SetEnableAllId({cmd.epoch, cmd.seq, cmd.has_epoch});
+    ctrl->SetEnableAllId(id);
 
     ctrl->Response().Ok();
-    if (cmd.has_seq) ctrl->Response().Param("seq", cmd.seq);
+    ctrl->Response().Param("epoch", id.epoch);
+    ctrl->Response().Param("seq", id.seq);
     ctrl->Response().Param("count", static_cast<int32_t>(motor_count));
     ctrl->SendResponse();
 }
@@ -860,9 +886,9 @@ static void CompleteHoming(Controller* ctrl, MotorSlot& motor) {
     motor.homed = true;
 
     ctrl->Response().Event("homed")
-        .Param("motor", static_cast<int32_t>(motor.motor_index));
-    if (motor.move_id.has_epoch) ctrl->Response().Param("epoch", motor.move_id.epoch);
-    ctrl->Response().Param("seq", motor.move_id.seq);
+        .Param("motor", static_cast<int32_t>(motor.motor_index))
+        .Param("epoch", motor.move_id.epoch)
+        .Param("seq", motor.move_id.seq);
     ctrl->SendResponse();
 
     // Check if all motors done
