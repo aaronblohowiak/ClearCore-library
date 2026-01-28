@@ -153,6 +153,7 @@ struct DigitalInState {
     bool error_trigger_enabled; ///< Enter error state when trigger value seen
     bool error_trigger_value;   ///< Value that triggers error (after invert)
     EdgeMode report_edges;      ///< Edge event reporting mode
+    CommandId config_id;        ///< Command that configured this pin (for event correlation)
 };
 
 /**
@@ -165,6 +166,7 @@ struct DigitalOutState {
     uint32_t default_max_ms;    ///< Default timeout from configure (used if max_ms not in write)
     uint32_t max_raised_ms;     ///< Active timeout for current high (0=disabled)
     uint32_t raise_start_time;  ///< When pin was last set high
+    CommandId config_id;        ///< Command that configured this pin (for error correlation)
     CommandId set_id;           ///< Command that set pin high (for timeout correlation)
 };
 
@@ -178,6 +180,7 @@ struct AnalogInState {
     bool error_threshold_enabled;
     uint32_t report_interval_ms;    ///< 0=disabled, else ms between reports
     uint32_t last_report_time;
+    CommandId config_id;            ///< Command that configured this pin (for event correlation)
 };
 
 /**

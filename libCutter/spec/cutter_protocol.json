@@ -511,21 +511,27 @@
       "params": {
         "motor": { "type": "motor_index" },
         "direction": { "type": "string", "values": ["neg", "pos"] },
-        "position": { "type": "int32" }
+        "position": { "type": "int32" },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
     "hlfb": {
       "description": "HLFB state changed",
       "params": {
         "motor": { "type": "motor_index" },
-        "state": { "type": "int32" }
+        "state": { "type": "int32" },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
     "input": {
       "description": "Digital input changed",
       "params": {
         "pin": { "type": "pin_index" },
-        "value": { "type": "bool" }
+        "value": { "type": "bool" },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
     "edge": {
@@ -533,14 +539,18 @@
       "params": {
         "pin": { "type": "pin_index" },
         "direction": { "type": "string", "values": ["rising", "falling"] },
-        "value": { "type": "bool" }
+        "value": { "type": "bool" },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
     "analog": {
       "description": "Analog input report",
       "params": {
         "pin": { "type": "pin_index" },
-        "value": { "type": "int32" }
+        "value": { "type": "int32" },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
     "pin_timeout": {
@@ -557,7 +567,9 @@
         "code": { "type": "uint32" },
         "message": { "type": "string" },
         "pin": { "type": "pin_index", "optional": true },
-        "motor": { "type": "motor_index", "optional": true }
+        "motor": { "type": "motor_index", "optional": true },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     }
   },

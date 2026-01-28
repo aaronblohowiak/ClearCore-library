@@ -244,7 +244,9 @@ void Controller::CheckPins() {
                     m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::PIN_ERROR_TRIGGER))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
-                        .Param("message", "Error trigger activated");
+                        .Param("message", "Error trigger activated")
+                        .Param("epoch", pin.digital_in.config_id.epoch)
+                        .Param("seq", pin.digital_in.config_id.seq);
                     SendResponse();
                     // Stop all motors on error
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -267,7 +269,9 @@ void Controller::CheckPins() {
                     pin.digital_in.last_value = val;
                     m_response.Event("input")
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
-                        .Param("value", val);
+                        .Param("value", val)
+                        .Param("epoch", pin.digital_in.config_id.epoch)
+                        .Param("seq", pin.digital_in.config_id.seq);
                     SendResponse();
                 }
 
@@ -288,7 +292,9 @@ void Controller::CheckPins() {
                         m_response.Event("edge")
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("direction", "rising")
-                            .Param("value", true);
+                            .Param("value", true)
+                            .Param("epoch", pin.digital_in.config_id.epoch)
+                            .Param("seq", pin.digital_in.config_id.seq);
                         SendResponse();
                     }
                     if (fallen && (pin.digital_in.report_edges == EdgeMode::FALLING ||
@@ -296,7 +302,9 @@ void Controller::CheckPins() {
                         m_response.Event("edge")
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("direction", "falling")
-                            .Param("value", false);
+                            .Param("value", false)
+                            .Param("epoch", pin.digital_in.config_id.epoch)
+                            .Param("seq", pin.digital_in.config_id.seq);
                         SendResponse();
                     }
                 }
@@ -313,7 +321,9 @@ void Controller::CheckPins() {
                     m_response.Event("error")
                         .Param("code", static_cast<uint32_t>(ErrorCode::PIN_OVERCURRENT))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
-                        .Param("message", "Pin overcurrent fault");
+                        .Param("message", "Pin overcurrent fault")
+                        .Param("epoch", pin.digital_out.config_id.epoch)
+                        .Param("seq", pin.digital_out.config_id.seq);
                     SendResponse();
                     // Stop all motors on error
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -354,7 +364,9 @@ void Controller::CheckPins() {
                             .Param("code", static_cast<uint32_t>(ErrorCode::ANALOG_THRESHOLD))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("value", static_cast<int32_t>(val))
-                            .Param("message", "Analog threshold exceeded");
+                            .Param("message", "Analog threshold exceeded")
+                            .Param("epoch", pin.analog_in.config_id.epoch)
+                            .Param("seq", pin.analog_in.config_id.seq);
                         SendResponse();
                         // Stop all motors on error
                         for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -373,7 +385,9 @@ void Controller::CheckPins() {
                         pin.analog_in.last_report_time = now;
                         m_response.Event("analog")
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
-                            .Param("value", static_cast<int32_t>(val));
+                            .Param("value", static_cast<int32_t>(val))
+                            .Param("epoch", pin.analog_in.config_id.epoch)
+                            .Param("seq", pin.analog_in.config_id.seq);
                         SendResponse();
                     }
                 }
@@ -401,7 +415,9 @@ void Controller::CheckMotors() {
             m_response.Event("error")
                 .Param("code", static_cast<uint32_t>(ErrorCode::MOTOR_FAULT))
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
-                .Param("message", "Motor hardware fault");
+                .Param("message", "Motor hardware fault")
+                .Param("epoch", motor.enable_id.epoch)
+                .Param("seq", motor.enable_id.seq);
             SendResponse();
             // Stop all motors
             for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -420,7 +436,9 @@ void Controller::CheckMotors() {
                 motor.last_hlfb_state = hlfb_state;
                 m_response.Event("hlfb")
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
-                    .Param("state", static_cast<int32_t>(hlfb_state));
+                    .Param("state", static_cast<int32_t>(hlfb_state))
+                    .Param("epoch", motor.enable_id.epoch)
+                    .Param("seq", motor.enable_id.seq);
                 SendResponse();
             }
         }

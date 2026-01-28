@@ -87,6 +87,7 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
     slot->digital_in.error_trigger_enabled = cmd.GetBoolOr("error_trigger", false);
     slot->digital_in.error_trigger_value = cmd.GetBoolOr("error_value", true);
     slot->digital_in.report_edges = edge_mode;
+    slot->digital_in.config_id = ctrl->GetCurrentCommandId();
 
     // Set hardware pin mode
     CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_INPUT_DIGITAL);
@@ -130,6 +131,7 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
     slot->digital_out.default_max_ms = static_cast<uint32_t>(cmd.GetIntOr("max_raised_ms", 0));
     slot->digital_out.max_raised_ms = 0;
     slot->digital_out.raise_start_time = 0;
+    slot->digital_out.config_id = ctrl->GetCurrentCommandId();
 
     // Set hardware pin mode and initial value
     CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_OUTPUT_DIGITAL);
@@ -169,6 +171,9 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Reporting
     slot->analog_in.report_interval_ms = static_cast<uint32_t>(cmd.GetIntOr("report_interval", 0));
+
+    // Store config command ID for event correlation
+    slot->analog_in.config_id = ctrl->GetCurrentCommandId();
 
     // Set hardware pin mode
     CutterHal::ConfigurePinMode(slot->pin_index, CutterHal::PIN_MODE_INPUT_ANALOG);
