@@ -522,6 +522,44 @@ void Controller::CheckMotors() {
             continue;  // Skip other checks for this motor
         }
 
+        // Check for limit switch trigger during a normal (non-homing) move.
+        // ClearCore auto-decelerates the motor and latches a
+        // MotionCanceled*Limit alert. Surface it as a "limit" event so the
+        // host is notified: open-loop steppers would otherwise report a false
+        // "done" (success on a crash), and SDSK/ClearPath moves would never
+        // complete because the latched alert blocks move completion (hang).
+        // Active homing legitimately drives into the limit and consumes these
+        // alerts itself (see CheckHomingState), so skip while homing.
+        if (motor.moving &&
+            (motor.homing_state == HomingState::IDLE ||
+             motor.homing_state == HomingState::COMPLETE)) {
+            bool neg_limit = CutterHal::HasMotionCanceledNegLimit(motor.motor_index);
+            bool pos_limit = CutterHal::HasMotionCanceledPosLimit(motor.motor_index);
+            if (neg_limit || pos_limit) {
+                motor.moving = false;
+                m_response.Event("limit")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("direction", neg_limit ? "neg" : "pos")
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
+                    .Param("epoch", motor.move_id.epoch)
+                    .Param("seq", motor.move_id.seq);
+                SendResponse();
+
+                // Transition back to READY if no other motors moving
+                bool any_moving = false;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].moving) {
+                        any_moving = true;
+                        break;
+                    }
+                }
+                if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                    m_stateMachine.TransitionTo(State::READY);
+                }
+                continue;  // Skip other checks for this motor
+            }
+        }
+
         // Check soft limits for velocity moves
         if (motor.moving && motor.velocity_move && motor.soft_limits_enabled) {
             int32_t pos = CutterHal::GetMotorPosition(motor.motor_index);

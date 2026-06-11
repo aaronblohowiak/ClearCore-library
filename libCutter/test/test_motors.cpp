@@ -933,6 +933,86 @@ TEST_F(MotorTest, EStopEventIncludesEpoch) {
     EXPECT_TRUE(serial.HasOutput(expected_seq));
 }
 
+// === Limit Switch Trigger During Move ===
+// A limit switch tripping during a normal (non-homing) move must emit a
+// "limit" event. Otherwise open-loop steppers would report a false "done"
+// and SDSK moves would hang on the latched alert.
+
+TEST_F(MotorTest, LimitTriggerDuringMoveEmitsEvent) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Start a move and capture the internal seq from the ok response
+    serial.SendLine("move seq=42 motor=0 steps=10000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
+    serial.ClearOutput();
+
+    // Hardware trips the positive limit and stops the motor
+    TRIGGER_POS_LIMIT(0);
+    ctrl->Update();
+
+    // Should emit a limit event (not a false "done"), with direction and seq
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_FALSE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasOutput("motor=0"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, NegLimitTriggerReportsDirection) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    serial.SendLine("move motor=0 steps=-10000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=neg"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, LimitTriggerReturnsToReady) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    serial.SendLine("move motor=0 steps=10000");
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetState(), State::WORKING);
+    serial.ClearOutput();
+
+    TRIGGER_POS_LIMIT(0);
+    ctrl->Update();
+
+    // With no other motors moving, controller returns to READY
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+TEST_F(MotorTest, NoLimitEventWhenNotMoving) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Alert latched but motor is idle - no spurious event should be emitted
+    g_fake.motion_canceled_pos_limit[0] = true;
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("limit"));
+}
+
 // === Internal Command ID Tests ===
 // These tests verify that every command gets an internal seq/epoch
 // regardless of whether the user supplied them
