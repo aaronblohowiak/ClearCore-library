@@ -99,24 +99,37 @@ void EnableMotor(uint8_t motor, bool enable) {
     }
 }
 
-void MoveRelative(uint8_t motor, int32_t steps) {
+bool MoveRelative(uint8_t motor, int32_t steps) {
     if (motor < 4) {
+        if (g_fake.move_rejected[motor]) {
+            return false;  // Simulate hardware rejecting the move (alert/at limit)
+        }
         g_fake.motor_target[motor] = g_fake.motor_position[motor] + steps;
         g_fake.motor_moving[motor] = true;
         g_fake.motor_steps_complete[motor] = false;
+        return true;
     }
+    return false;
 }
 
-void MoveAbsolute(uint8_t motor, int32_t position) {
+bool MoveAbsolute(uint8_t motor, int32_t position) {
     if (motor < 4) {
+        if (g_fake.move_rejected[motor]) {
+            return false;  // Simulate hardware rejecting the move (alert/at limit)
+        }
         g_fake.motor_target[motor] = position;
         g_fake.motor_moving[motor] = true;
         g_fake.motor_steps_complete[motor] = false;
+        return true;
     }
+    return false;
 }
 
-void MoveVelocity(uint8_t motor, int32_t velocity) {
+bool MoveVelocity(uint8_t motor, int32_t velocity) {
     if (motor < 4) {
+        if (g_fake.move_rejected[motor]) {
+            return false;  // Simulate hardware rejecting the move (alert/at limit)
+        }
         g_fake.motor_velocity[motor] = velocity;
         g_fake.motor_moving[motor] = (velocity != 0);
         // Velocity moves don't have a target, so steps_complete stays false
@@ -124,7 +137,9 @@ void MoveVelocity(uint8_t motor, int32_t velocity) {
         if (velocity != 0) {
             g_fake.motor_steps_complete[motor] = false;
         }
+        return true;
     }
+    return false;
 }
 
 void StopMotor(uint8_t motor, bool immediate) {

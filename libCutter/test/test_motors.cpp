@@ -1013,6 +1013,61 @@ TEST_F(MotorTest, NoLimitEventWhenNotMoving) {
     EXPECT_FALSE(serial.HasEvent("limit"));
 }
 
+// === Move Rejection ===
+// When the hardware rejects a move (alert still present, or commanded back
+// into an active limit), libCutter must report an error rather than falsely
+// replying "ok" while the motor stays put.
+
+TEST_F(MotorTest, RejectedMoveReportsError) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Hardware will reject the move (e.g. sitting on a limit / alert present)
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("307"));        // MOVE_REJECTED
+    EXPECT_FALSE(serial.HasOutput("ok"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    // Must not get stuck in WORKING
+    EXPECT_NE(ctrl->GetState(), State::WORKING);
+}
+
+TEST_F(MotorTest, RejectedVelocityMoveReportsError) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("move_velocity motor=0 velocity=2000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("307"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_NE(ctrl->GetState(), State::WORKING);
+}
+
+TEST_F(MotorTest, MoveSucceedsAfterRejectionCleared) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // First move rejected (still on limit)
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("error"));
+    serial.ClearOutput();
+
+    // After backing off / clearing, the next move is accepted
+    SET_MOVE_REJECTED(0, false);
+    serial.SendLine("move motor=0 steps=-1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+}
+
 // === Internal Command ID Tests ===
 // These tests verify that every command gets an internal seq/epoch
 // regardless of whether the user supplied them

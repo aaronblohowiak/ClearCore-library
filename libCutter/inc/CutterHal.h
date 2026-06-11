@@ -149,24 +149,30 @@ void EnableMotor(uint8_t motor, bool enable);
 
     \param[in] motor Motor index (0-3)
     \param[in] steps Steps to move (signed)
+    \return true if the move was accepted; false if rejected by the hardware
+            (e.g. an alert is present or the motor is at an active limit)
 **/
-void MoveRelative(uint8_t motor, int32_t steps);
+bool MoveRelative(uint8_t motor, int32_t steps);
 
 /**
     \brief Start absolute move
 
     \param[in] motor Motor index (0-3)
     \param[in] position Target position in steps
+    \return true if the move was accepted; false if rejected by the hardware
+            (e.g. an alert is present or the motor is at an active limit)
 **/
-void MoveAbsolute(uint8_t motor, int32_t position);
+bool MoveAbsolute(uint8_t motor, int32_t position);
 
 /**
     \brief Start velocity move
 
     \param[in] motor Motor index (0-3)
     \param[in] velocity Velocity in steps/sec (signed)
+    \return true if the move was accepted; false if rejected by the hardware
+            (e.g. an alert is present or the motor is at an active limit)
 **/
-void MoveVelocity(uint8_t motor, int32_t velocity);
+bool MoveVelocity(uint8_t motor, int32_t velocity);
 
 /**
     \brief Stop motor

@@ -476,6 +476,13 @@ Clear motor alerts (limit switch triggers, E-Stop). Required after an alert befo
 <- ok motor=0
 ```
 
+**Recovery after a limit switch trip:** the motor stays physically on the
+switch, so the limit is still active. After `clear_alerts`, the **first move
+must be in the direction away from the limit**. A move commanded back into an
+active limit is rejected by the hardware and returns
+`error code=307 MOVE_REJECTED` (the motor does not move). Move off the switch
+first, then resume normal motion.
+
 ---
 
 ### Pin Configuration Commands

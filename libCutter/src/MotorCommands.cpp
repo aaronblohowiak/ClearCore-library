@@ -475,18 +475,27 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetMotorParams(slot->motor_index, vel, accel);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    slot->moving = true;
-    slot->velocity_move = false;
-    slot->move_id = id;
 
-    if (is_relative) {
-        CutterHal::MoveRelative(slot->motor_index, steps);
-    } else {
-        CutterHal::MoveAbsolute(slot->motor_index, position);
-    }
+    bool accepted = is_relative
+        ? CutterHal::MoveRelative(slot->motor_index, steps)
+        : CutterHal::MoveAbsolute(slot->motor_index, position);
 
     // Restore motor defaults after starting move
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
+
+    if (!accepted) {
+        // Hardware rejected the move (alert still present, or commanded into
+        // an active limit). Report the failure instead of falsely claiming
+        // success - otherwise the host sees "ok" but the motor never moves.
+        slot->moving = false;
+        SendError(ctrl, cmd, ErrorCode::MOVE_REJECTED,
+                  "Move rejected: clear alerts and move away from the limit");
+        return;
+    }
+
+    slot->moving = true;
+    slot->velocity_move = false;
+    slot->move_id = id;
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -539,13 +548,24 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, accel);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    slot->moving = true;
-    slot->velocity_move = true;
-    slot->move_id = id;
-    CutterHal::MoveVelocity(slot->motor_index, velocity);
+    bool accepted = CutterHal::MoveVelocity(slot->motor_index, velocity);
 
     // Restore motor defaults
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
+
+    if (!accepted) {
+        // Hardware rejected the move (alert still present, or commanded into
+        // an active limit). Report the failure instead of falsely claiming
+        // success - otherwise the host sees "ok" but the motor never moves.
+        slot->moving = false;
+        SendError(ctrl, cmd, ErrorCode::MOVE_REJECTED,
+                  "Move rejected: clear alerts and move away from the limit");
+        return;
+    }
+
+    slot->moving = true;
+    slot->velocity_move = true;
+    slot->move_id = id;
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {

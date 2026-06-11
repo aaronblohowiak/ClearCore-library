@@ -62,6 +62,7 @@
     "304": { "name": "HLFB_TIMEOUT", "description": "HLFB not asserted in time" },
     "305": { "name": "SOFT_LIMIT", "description": "Move exceeds soft limits" },
     "306": { "name": "EXCEEDS_LIMIT", "description": "Per-move vel/accel exceeds motor max" },
+    "307": { "name": "MOVE_REJECTED", "description": "Hardware rejected the move (alert present or at active limit); clear alerts and move away from the limit" },
     "400": { "name": "INTERNAL_ERROR", "description": "Internal firmware error" },
     "401": { "name": "EMERGENCY_STOP", "description": "Emergency stop activated" }
   },

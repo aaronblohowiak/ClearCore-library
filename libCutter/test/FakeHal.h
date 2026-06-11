@@ -39,6 +39,7 @@ struct FakeHalState {
     bool motor_enabled[4] = {};
     bool motor_moving[4] = {};
     bool motor_steps_complete[4] = {true, true, true, true};
+    bool move_rejected[4] = {};                // If set, Move*() returns false (sim alert/at limit)
     int32_t motor_position[4] = {};
     int32_t motor_target[4] = {};
     int32_t motor_velocity[4] = {};
@@ -236,6 +237,7 @@ extern FakeHalState g_fake;
 #define SET_MOTOR_READY(m, r)   g_fake.SetMotorReady(m, r)
 #define SET_PIN_FAULT(pin, f)   g_fake.pin_fault[pin] = (f)
 #define SET_MOTOR_FAULT(m, f)   g_fake.motor_fault[m] = (f)
+#define SET_MOVE_REJECTED(m, r) g_fake.move_rejected[m] = (r)
 #define TRIGGER_NEG_LIMIT(m)    g_fake.TriggerNegativeLimit(m)
 #define TRIGGER_POS_LIMIT(m)    g_fake.TriggerPositiveLimit(m)
 #define TRIGGER_ESTOP(m)        g_fake.TriggerEStop(m)
