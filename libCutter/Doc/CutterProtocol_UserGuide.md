@@ -321,6 +321,10 @@ Set the global motor step clock rate. Affects all motors.
 
 Configure an emergency stop pin for one or all motors. The pin must be (or will be auto-configured as) digital input. Uses NC (normally-closed) logic - motion stops when pin goes low.
 
+When the E-Stop trips during a move, the motor is put into the alert state and
+an `alert` event with `cause=estop` is emitted (see the Events section). Clear
+it with `clear_alerts` before further motion.
+
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `pin` | int | Pin index (0-12) |
@@ -405,6 +409,27 @@ Command a positional move. Supports both relative (`steps`) and absolute (`posit
 <- event type=done motor=0 seq=2 position=5000
 ```
 
+If a limit switch trips during the move, the move is canceled: a `limit`
+sensor event and an `alert` event (`cause=pos_limit`/`neg_limit`) are emitted,
+and no `done` is sent. If the motor is already in an alert state (or you
+command a move back into an active limit), the move is rejected up front with
+`error code=307 MOVE_REJECTED` and the motor does not move - clear the alert
+and move away from the limit first.
+
+```
+-> move motor=0 steps=10000 seq=3
+<- ok seq=3 motor=0
+<- event type=limit motor=0 direction=pos value=1 position=8500 seq=3
+<- event type=alert motor=0 cause=pos_limit position=8500 seq=3
+
+-> clear_alerts motor=0
+<- ok motor=0
+-> move motor=0 steps=10000 seq=4          # back into the limit
+<- error code=307 message="Move rejected: clear alerts and move away from the limit" seq=4
+-> move motor=0 steps=-1000 seq=5          # away from the limit
+<- ok seq=5 motor=0
+```
+
 #### move_velocity
 
 Command a velocity move. Motor continues at specified velocity until stopped or soft limit is reached.
@@ -426,6 +451,13 @@ Command a velocity move. Motor continues at specified velocity until stopped or 
 If a soft limit is reached during a velocity move:
 ```
 <- event type=soft_limit motor=0 seq=1 position=10000
+```
+
+If a hardware limit switch trips during a velocity move, the move is canceled
+and both a `limit` and an `alert` event are emitted (same as for `move`):
+```
+<- event type=limit motor=0 direction=pos value=1 position=20000 seq=1
+<- event type=alert motor=0 cause=pos_limit position=20000 seq=1
 ```
 
 #### stop
@@ -697,7 +729,7 @@ Events are sent asynchronously when certain conditions occur.
 | `done` | Motor move completed | `motor`, `position`, [`epoch`], `seq` |
 | `homed` | Motor homing completed | `motor`, [`epoch`], `seq` |
 | `soft_limit` | Velocity move hit soft limit | `motor`, `position`, [`epoch`], `seq` |
-| `estop` | E-Stop triggered | `motor`, `position`, [`epoch`], `seq` |
+| `alert` | Motor put into alert state, motion canceled (latched until `clear_alerts`) | `motor`, `cause`, `position`, [`epoch`], `seq` |
 | `limit` | Limit switch input changed state | `motor`, `direction`, `value`, `position`, [`epoch`], `seq` |
 | `edge` | Digital input edge detected | `pin`, `direction` |
 | `change` | Digital input changed | `pin`, `value` |
@@ -711,13 +743,36 @@ Events are sent asynchronously when certain conditions occur.
 <- event type=done motor=0 epoch=1 seq=42 position=10000
 <- event type=homed motor=1 seq=5
 <- event type=soft_limit motor=0 seq=10 position=50000
-<- event type=estop motor=0 position=1234
+<- event type=alert motor=0 cause=estop position=1234 seq=7
 <- event type=limit motor=0 direction=neg value=1 position=0
 <- event type=limit motor=0 direction=neg value=0 position=200
 <- event type=edge pin=7 direction=rising
 <- event type=change pin=6 value=true
 <- event type=pin_timeout pin=0 seq=5
 ```
+
+#### `alert` vs `limit`: two distinct events
+
+A limit switch changing state and a motor being put into the alert state are
+separate conditions, and each has its own event:
+
+- **`limit`** is a *sensor* event: the limit input changed state. It fires on
+  every transition (`value=1` pressed, `value=0` released), whether the motor
+  is idle, moving, or homing. It says nothing about the motor.
+- **`alert`** is a *motor* event: the motor's motion was canceled and it is now
+  latched in the alert state until `clear_alerts`. The `cause` identifies the
+  source (`estop`, `pos_limit`, `neg_limit`).
+
+When a limit is hit **during a move**, you get *both* - the sensor changed and
+the motor was put into alert:
+
+```
+<- event type=limit motor=0 direction=pos value=1 position=8500 seq=12
+<- event type=alert motor=0 cause=pos_limit position=8500 seq=12
+```
+
+When the same switch is pressed while the motor is **idle** (or during homing,
+which consumes the alert itself), only the `limit` event fires.
 
 ---
 
@@ -759,6 +814,7 @@ Events are sent asynchronously when certain conditions occur.
 | 304 | HLFB_TIMEOUT | HLFB not asserted in time |
 | 305 | SOFT_LIMIT | Move exceeds soft limits |
 | 306 | EXCEEDS_LIMIT | Per-move vel/accel exceeds motor max |
+| 307 | MOVE_REJECTED | Hardware rejected the move (alert present or at active limit) |
 
 ### System Errors (400-499)
 

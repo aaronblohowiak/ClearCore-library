@@ -845,8 +845,9 @@ TEST_F(MotorTest, EStopTriggerDuringMove) {
     TRIGGER_ESTOP(0);
     ctrl->Update();
 
-    // Should emit estop event with position and internal seq
-    EXPECT_TRUE(serial.HasEvent("estop"));
+    // Should emit a unified alert event (cause=estop) with position and seq
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=estop"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
     char expected_seq[32];
     snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
@@ -926,7 +927,8 @@ TEST_F(MotorTest, EStopEventIncludesEpoch) {
     ctrl->Update();
 
     // Event should include internal epoch and seq
-    EXPECT_TRUE(serial.HasEvent("estop"));
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=estop"));
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
     char expected_seq[32];
     snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
@@ -934,9 +936,11 @@ TEST_F(MotorTest, EStopEventIncludesEpoch) {
 }
 
 // === Limit Switch Trigger During Move ===
-// A limit switch tripping during a normal (non-homing) move must emit a
-// "limit" event. Otherwise open-loop steppers would report a false "done"
-// and SDSK moves would hang on the latched alert.
+// A limit switch tripping during a normal (non-homing) move emits two distinct
+// events: a "limit" sensor event (the switch changed state) and an "alert"
+// event (the motor was put into the alert state and its move canceled).
+// Otherwise open-loop steppers would report a false "done" and SDSK moves
+// would hang on the latched alert.
 
 TEST_F(MotorTest, LimitTriggerDuringMoveEmitsEvent) {
     ConfigureAndEnableStepper(0);
@@ -959,11 +963,13 @@ TEST_F(MotorTest, LimitTriggerDuringMoveEmitsEvent) {
     TRIGGER_POS_LIMIT(0);
     ctrl->Update();
 
-    // Should emit a limit event (not a false "done"), with direction and seq
+    // Both the sensor event and the motor-alert event fire (not a false "done")
     EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=pos_limit"));
     EXPECT_FALSE(serial.HasEvent("done"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
-    EXPECT_TRUE(serial.HasOutput("direction=pos"));
     char expected_seq[32];
     snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
     EXPECT_TRUE(serial.HasOutput(expected_seq));
@@ -983,6 +989,8 @@ TEST_F(MotorTest, NegLimitTriggerReportsDirection) {
 
     EXPECT_TRUE(serial.HasEvent("limit"));
     EXPECT_TRUE(serial.HasOutput("direction=neg"));
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=neg_limit"));
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
 }
 
@@ -1024,9 +1032,11 @@ TEST_F(MotorTest, LimitStateChangeEmitsEventWhenIdle) {
     SET_POS_LIMIT(0, true);
     ctrl->Update();
 
+    // Sensor event only - the motor was not moving, so it is not put in alert
     EXPECT_TRUE(serial.HasEvent("limit"));
     EXPECT_TRUE(serial.HasOutput("direction=pos"));
     EXPECT_TRUE(serial.HasOutput("value=1"));
+    EXPECT_FALSE(serial.HasEvent("alert"));
 }
 
 TEST_F(MotorTest, LimitReleaseEmitsEvent) {

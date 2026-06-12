@@ -244,7 +244,7 @@
         "target": { "one_required": true, "mutually_exclusive": true }
       },
       "response_params": ["motor"],
-      "emits_events": ["done", "soft_limit", "estop", "limit"]
+      "emits_events": ["done", "soft_limit", "alert", "limit"]
     },
 
     "move_velocity": {
@@ -256,7 +256,7 @@
         "accel": { "type": "int32", "min": 1, "required": false }
       },
       "response_params": ["motor"],
-      "emits_events": ["soft_limit", "estop", "limit"]
+      "emits_events": ["soft_limit", "alert", "limit"]
     },
 
     "stop": {
@@ -498,10 +498,11 @@
         "seq": { "type": "uint32" }
       }
     },
-    "estop": {
-      "description": "E-Stop triggered",
+    "alert": {
+      "description": "Motor was put into the alert state and its motion canceled (latched until clear_alerts). Distinct from the 'limit' sensor event. The 'cause' identifies the source.",
       "params": {
         "motor": { "type": "motor_index" },
+        "cause": { "type": "string", "values": ["estop", "pos_limit", "neg_limit"] },
         "position": { "type": "int32" },
         "epoch": { "type": "uint32", "optional": true },
         "seq": { "type": "uint32" }
