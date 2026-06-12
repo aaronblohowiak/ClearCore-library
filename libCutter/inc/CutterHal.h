@@ -317,6 +317,28 @@ bool SetLimitSwitchNeg(uint8_t motor, uint8_t pin);
 bool SetLimitSwitchPos(uint8_t motor, uint8_t pin);
 
 /**
+    \brief Get the live state of the positive limit switch input
+
+    Reflects the connector right now (true = limit active/asserted), independent
+    of any latched alert. Used to report limit switch state changes to the host.
+
+    \param[in] motor Motor index (0-3)
+    \return true if the positive limit switch is currently active
+**/
+bool InPosLimit(uint8_t motor);
+
+/**
+    \brief Get the live state of the negative limit switch input
+
+    Reflects the connector right now (true = limit active/asserted), independent
+    of any latched alert. Used to report limit switch state changes to the host.
+
+    \param[in] motor Motor index (0-3)
+    \return true if the negative limit switch is currently active
+**/
+bool InNegLimit(uint8_t motor);
+
+/**
     \brief Check if motion was canceled due to negative limit switch
 
     \param[in] motor Motor index (0-3)

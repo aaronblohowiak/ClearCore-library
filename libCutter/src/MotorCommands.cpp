@@ -166,6 +166,11 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
         slot->limit_pos_pin = CutterHal::PIN_INVALID;
     }
 
+    // Seed limit-switch change tracking with the current state so configuration
+    // doesn't emit a spurious "limit" event for the initial reading.
+    slot->last_pos_limit = CutterHal::InPosLimit(slot->motor_index);
+    slot->last_neg_limit = CutterHal::InNegLimit(slot->motor_index);
+
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
@@ -311,6 +316,11 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
         pin->mode = PinMode::MOTOR_LIMIT;
         pin->pin_index = static_cast<uint8_t>(limit_pos);
     }
+
+    // Seed limit-switch change tracking with the current state so configuration
+    // doesn't emit a spurious "limit" event for the initial reading.
+    slot->last_pos_limit = CutterHal::InPosLimit(slot->motor_index);
+    slot->last_neg_limit = CutterHal::InNegLimit(slot->motor_index);
 
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);

@@ -274,6 +274,10 @@ struct MotorSlot {
     uint8_t limit_neg_pin;          ///< Pin for negative limit switch (PIN_INVALID = none)
     uint8_t limit_pos_pin;          ///< Pin for positive limit switch (PIN_INVALID = none)
 
+    // Limit switch runtime state (for change events)
+    bool last_pos_limit;            ///< Last seen positive limit input state
+    bool last_neg_limit;            ///< Last seen negative limit input state
+
     // Homing parameters (used when homing_mode=LIMIT_SWITCH for both motor types)
     int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
     int32_t homing_seek_velocity;   ///< Fast approach velocity (steps/sec, always positive)

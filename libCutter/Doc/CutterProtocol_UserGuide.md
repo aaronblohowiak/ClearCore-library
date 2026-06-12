@@ -698,7 +698,7 @@ Events are sent asynchronously when certain conditions occur.
 | `homed` | Motor homing completed | `motor`, [`epoch`], `seq` |
 | `soft_limit` | Velocity move hit soft limit | `motor`, `position`, [`epoch`], `seq` |
 | `estop` | E-Stop triggered | `motor`, `position`, [`epoch`], `seq` |
-| `limit` | Limit switch triggered | `motor`, `direction`, `position` |
+| `limit` | Limit switch input changed state | `motor`, `direction`, `value`, `position`, [`epoch`], `seq` |
 | `edge` | Digital input edge detected | `pin`, `direction` |
 | `change` | Digital input changed | `pin`, `value` |
 | `analog` | Analog input report | `pin`, `value` |
@@ -712,7 +712,8 @@ Events are sent asynchronously when certain conditions occur.
 <- event type=homed motor=1 seq=5
 <- event type=soft_limit motor=0 seq=10 position=50000
 <- event type=estop motor=0 position=1234
-<- event type=limit motor=0 direction=neg position=0
+<- event type=limit motor=0 direction=neg value=1 position=0
+<- event type=limit motor=0 direction=neg value=0 position=200
 <- event type=edge pin=7 direction=rising
 <- event type=change pin=6 value=true
 <- event type=pin_timeout pin=0 seq=5

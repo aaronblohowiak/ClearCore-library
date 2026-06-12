@@ -307,6 +307,22 @@ bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
     return false;
 }
 
+bool InPosLimit(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->StatusReg().bit.InPositiveLimit;
+    }
+    return false;
+}
+
+bool InNegLimit(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->StatusReg().bit.InNegativeLimit;
+    }
+    return false;
+}
+
 bool HasMotionCanceledNegLimit(uint8_t motor) {
     auto* m = GetMotor(motor);
     if (m) {

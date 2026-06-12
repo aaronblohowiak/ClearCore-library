@@ -508,10 +508,11 @@
       }
     },
     "limit": {
-      "description": "Limit switch triggered",
+      "description": "Limit switch input changed state (emitted on every transition; value=1 when active/tripped, value=0 when released)",
       "params": {
         "motor": { "type": "motor_index" },
         "direction": { "type": "string", "values": ["neg", "pos"] },
+        "value": { "type": "bool" },
         "position": { "type": "int32" },
         "epoch": { "type": "uint32" },
         "seq": { "type": "uint32" }

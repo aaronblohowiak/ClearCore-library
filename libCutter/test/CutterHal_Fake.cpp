@@ -244,6 +244,20 @@ bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
     return false;
 }
 
+bool InPosLimit(uint8_t motor) {
+    if (motor < 4) {
+        return g_fake.in_pos_limit[motor];
+    }
+    return false;
+}
+
+bool InNegLimit(uint8_t motor) {
+    if (motor < 4) {
+        return g_fake.in_neg_limit[motor];
+    }
+    return false;
+}
+
 bool HasMotionCanceledNegLimit(uint8_t motor) {
     if (motor < 4) {
         return g_fake.motion_canceled_neg_limit[motor];

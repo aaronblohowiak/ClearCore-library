@@ -1006,8 +1006,73 @@ TEST_F(MotorTest, NoLimitEventWhenNotMoving) {
     ConfigureAndEnableStepper(0);
     serial.ClearOutput();
 
-    // Alert latched but motor is idle - no spurious event should be emitted
+    // Alert latched but the live input never changed - no event should fire
     g_fake.motion_canceled_pos_limit[0] = true;
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("limit"));
+}
+
+// === Limit Switch State Change Events ===
+// Every transition of a limit input must be reported, even while idle.
+
+TEST_F(MotorTest, LimitStateChangeEmitsEventWhenIdle) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Press the positive limit while the motor is idle
+    SET_POS_LIMIT(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    EXPECT_TRUE(serial.HasOutput("value=1"));
+}
+
+TEST_F(MotorTest, LimitReleaseEmitsEvent) {
+    ConfigureAndEnableStepper(0);
+    SET_POS_LIMIT(0, true);
+    ctrl->Update();          // press reported
+    serial.ClearOutput();
+
+    // Release the switch
+    SET_POS_LIMIT(0, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    EXPECT_TRUE(serial.HasOutput("value=0"));
+}
+
+TEST_F(MotorTest, NegLimitStateChangeEmitsEvent) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    SET_NEG_LIMIT(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=neg"));
+    EXPECT_TRUE(serial.HasOutput("value=1"));
+}
+
+TEST_F(MotorTest, LimitNoEventWhenStateUnchanged) {
+    ConfigureAndEnableStepper(0);
+    SET_POS_LIMIT(0, true);
+    ctrl->Update();          // first change reported
+    serial.ClearOutput();
+
+    ctrl->Update();          // state unchanged - no repeat event
+
+    EXPECT_FALSE(serial.HasEvent("limit"));
+}
+
+TEST_F(MotorTest, LimitStateSeededAtConfigureNoSpuriousEvent) {
+    // A switch already active at configure time should not emit on first Update
+    SET_POS_LIMIT(0, true);
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
     ctrl->Update();
 
     EXPECT_FALSE(serial.HasEvent("limit"));
