@@ -163,25 +163,28 @@ void EnableMotor(uint8_t motor, bool enable) {
     }
 }
 
-void MoveRelative(uint8_t motor, int32_t steps) {
+bool MoveRelative(uint8_t motor, int32_t steps) {
     auto* m = GetMotor(motor);
     if (m) {
-        m->Move(steps);
+        return m->Move(steps);
     }
+    return false;
 }
 
-void MoveAbsolute(uint8_t motor, int32_t position) {
+bool MoveAbsolute(uint8_t motor, int32_t position) {
     auto* m = GetMotor(motor);
     if (m) {
-        m->Move(position, ClearCore::MotorDriver::MOVE_TARGET_ABSOLUTE);
+        return m->Move(position, ClearCore::MotorDriver::MOVE_TARGET_ABSOLUTE);
     }
+    return false;
 }
 
-void MoveVelocity(uint8_t motor, int32_t velocity) {
+bool MoveVelocity(uint8_t motor, int32_t velocity) {
     auto* m = GetMotor(motor);
     if (m) {
-        m->MoveVelocity(velocity);
+        return m->MoveVelocity(velocity);
     }
+    return false;
 }
 
 void StopMotor(uint8_t motor, bool immediate) {
@@ -300,6 +303,22 @@ bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
     auto* m = GetMotor(motor);
     if (m) {
         return m->LimitSwitchPos(ToClearCorePin(pin));
+    }
+    return false;
+}
+
+bool InPosLimit(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->StatusReg().bit.InPositiveLimit;
+    }
+    return false;
+}
+
+bool InNegLimit(uint8_t motor) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        return m->StatusReg().bit.InNegativeLimit;
     }
     return false;
 }

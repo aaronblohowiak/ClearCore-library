@@ -39,6 +39,7 @@ struct FakeHalState {
     bool motor_enabled[4] = {};
     bool motor_moving[4] = {};
     bool motor_steps_complete[4] = {true, true, true, true};
+    bool move_rejected[4] = {};                // If set, Move*() returns false (sim alert/at limit)
     int32_t motor_position[4] = {};
     int32_t motor_target[4] = {};
     int32_t motor_velocity[4] = {};
@@ -53,6 +54,8 @@ struct FakeHalState {
     uint8_t limit_switch_pos_pin[4] = {255, 255, 255, 255};
     bool motion_canceled_neg_limit[4] = {};  // Alert flag
     bool motion_canceled_pos_limit[4] = {};  // Alert flag
+    bool in_pos_limit[4] = {};               // Live positive limit input state
+    bool in_neg_limit[4] = {};               // Live negative limit input state
 
     // === E-Stop State ===
     uint8_t estop_pin[4] = {255, 255, 255, 255};  // PIN_INVALID = 255
@@ -171,9 +174,32 @@ struct FakeHalState {
     void TriggerNegativeLimit(uint8_t motor) {
         if (motor < 4) {
             motion_canceled_neg_limit[motor] = true;
+            in_neg_limit[motor] = true;       // Live input goes active
             motor_moving[motor] = false;
             motor_velocity[motor] = 0;
             motor_steps_complete[motor] = true;
+        }
+    }
+
+    /**
+     * @brief Set the live positive limit input state (press/release)
+     * @param motor Motor index (0-3)
+     * @param active true = switch active/pressed, false = released
+     */
+    void SetPosLimit(uint8_t motor, bool active) {
+        if (motor < 4) {
+            in_pos_limit[motor] = active;
+        }
+    }
+
+    /**
+     * @brief Set the live negative limit input state (press/release)
+     * @param motor Motor index (0-3)
+     * @param active true = switch active/pressed, false = released
+     */
+    void SetNegLimit(uint8_t motor, bool active) {
+        if (motor < 4) {
+            in_neg_limit[motor] = active;
         }
     }
 
@@ -186,6 +212,7 @@ struct FakeHalState {
     void TriggerPositiveLimit(uint8_t motor) {
         if (motor < 4) {
             motion_canceled_pos_limit[motor] = true;
+            in_pos_limit[motor] = true;       // Live input goes active
             motor_moving[motor] = false;
             motor_velocity[motor] = 0;
             motor_steps_complete[motor] = true;
@@ -236,7 +263,10 @@ extern FakeHalState g_fake;
 #define SET_MOTOR_READY(m, r)   g_fake.SetMotorReady(m, r)
 #define SET_PIN_FAULT(pin, f)   g_fake.pin_fault[pin] = (f)
 #define SET_MOTOR_FAULT(m, f)   g_fake.motor_fault[m] = (f)
+#define SET_MOVE_REJECTED(m, r) g_fake.move_rejected[m] = (r)
 #define TRIGGER_NEG_LIMIT(m)    g_fake.TriggerNegativeLimit(m)
 #define TRIGGER_POS_LIMIT(m)    g_fake.TriggerPositiveLimit(m)
+#define SET_POS_LIMIT(m, a)     g_fake.SetPosLimit(m, a)
+#define SET_NEG_LIMIT(m, a)     g_fake.SetNegLimit(m, a)
 #define TRIGGER_ESTOP(m)        g_fake.TriggerEStop(m)
 #define CLEAR_MOTOR_ALERTS(m)   g_fake.ClearAlerts(m)

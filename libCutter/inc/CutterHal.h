@@ -149,24 +149,30 @@ void EnableMotor(uint8_t motor, bool enable);
 
     \param[in] motor Motor index (0-3)
     \param[in] steps Steps to move (signed)
+    \return true if the move was accepted; false if rejected by the hardware
+            (e.g. an alert is present or the motor is at an active limit)
 **/
-void MoveRelative(uint8_t motor, int32_t steps);
+bool MoveRelative(uint8_t motor, int32_t steps);
 
 /**
     \brief Start absolute move
 
     \param[in] motor Motor index (0-3)
     \param[in] position Target position in steps
+    \return true if the move was accepted; false if rejected by the hardware
+            (e.g. an alert is present or the motor is at an active limit)
 **/
-void MoveAbsolute(uint8_t motor, int32_t position);
+bool MoveAbsolute(uint8_t motor, int32_t position);
 
 /**
     \brief Start velocity move
 
     \param[in] motor Motor index (0-3)
     \param[in] velocity Velocity in steps/sec (signed)
+    \return true if the move was accepted; false if rejected by the hardware
+            (e.g. an alert is present or the motor is at an active limit)
 **/
-void MoveVelocity(uint8_t motor, int32_t velocity);
+bool MoveVelocity(uint8_t motor, int32_t velocity);
 
 /**
     \brief Stop motor
@@ -309,6 +315,28 @@ bool SetLimitSwitchNeg(uint8_t motor, uint8_t pin);
     \return true if successfully configured
 **/
 bool SetLimitSwitchPos(uint8_t motor, uint8_t pin);
+
+/**
+    \brief Get the live state of the positive limit switch input
+
+    Reflects the connector right now (true = limit active/asserted), independent
+    of any latched alert. Used to report limit switch state changes to the host.
+
+    \param[in] motor Motor index (0-3)
+    \return true if the positive limit switch is currently active
+**/
+bool InPosLimit(uint8_t motor);
+
+/**
+    \brief Get the live state of the negative limit switch input
+
+    Reflects the connector right now (true = limit active/asserted), independent
+    of any latched alert. Used to report limit switch state changes to the host.
+
+    \param[in] motor Motor index (0-3)
+    \return true if the negative limit switch is currently active
+**/
+bool InNegLimit(uint8_t motor);
 
 /**
     \brief Check if motion was canceled due to negative limit switch

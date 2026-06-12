@@ -429,6 +429,38 @@ void Controller::CheckMotors() {
             return;
         }
 
+        // Report limit switch state changes. Whenever a configured limit
+        // input transitions (pressed or released), emit a "limit" event with
+        // the new value so the host always knows the endstop state - even
+        // while idle or homing. The move-cancellation handling below relies on
+        // the hardware alert, not on this report.
+        {
+            bool pos_now = CutterHal::InPosLimit(motor.motor_index);
+            if (pos_now != motor.last_pos_limit) {
+                motor.last_pos_limit = pos_now;
+                m_response.Event("limit")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("direction", "pos")
+                    .Param("value", pos_now)
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
+                    .Param("epoch", motor.move_id.epoch)
+                    .Param("seq", motor.move_id.seq);
+                SendResponse();
+            }
+            bool neg_now = CutterHal::InNegLimit(motor.motor_index);
+            if (neg_now != motor.last_neg_limit) {
+                motor.last_neg_limit = neg_now;
+                m_response.Event("limit")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("direction", "neg")
+                    .Param("value", neg_now)
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
+                    .Param("epoch", motor.move_id.epoch)
+                    .Param("seq", motor.move_id.seq);
+                SendResponse();
+            }
+        }
+
         // Check for HLFB state changes (ClearPath only)
         if (motor.type == MotorType::CLEARPATH && motor.enabled) {
             uint8_t hlfb_state = CutterHal::GetHlfbState(motor.motor_index);
@@ -498,11 +530,15 @@ void Controller::CheckMotors() {
             }
         }
 
-        // Check for E-Stop trigger
+        // Check for E-Stop trigger - puts the motor into the alert state.
+        // Reported via the unified "alert" event (cause=estop). This is
+        // distinct from any sensor-level event: it says the motor's motion was
+        // canceled and it is now latched in alert until clear_alerts.
         if (motor.moving && CutterHal::HasMotionCanceledEStop(motor.motor_index)) {
             motor.moving = false;
-            m_response.Event("estop")
+            m_response.Event("alert")
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
+                .Param("cause", "estop")
                 .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
                 .Param("epoch", motor.move_id.epoch)
                 .Param("seq", motor.move_id.seq);
@@ -520,6 +556,48 @@ void Controller::CheckMotors() {
                 m_stateMachine.TransitionTo(State::READY);
             }
             continue;  // Skip other checks for this motor
+        }
+
+        // Handle a limit switch canceling a normal (non-homing) move.
+        // ClearCore auto-decelerates the motor and latches a
+        // MotionCanceled*Limit alert; report it via the unified "alert" event
+        // (cause=pos_limit/neg_limit), stop tracking the move, and return to
+        // READY. This is distinct from the "limit" sensor event emitted by the
+        // monitor above: a mid-move trip yields both a "limit" (the switch
+        // changed state) and an "alert" (the motor was put into alert).
+        // Without this, open-loop steppers would report a false "done" (success
+        // on a crash) and SDSK/ClearPath moves would never complete because the
+        // latched alert blocks move completion (hang).
+        // Active homing legitimately drives into the limit and consumes these
+        // alerts itself (see CheckHomingState), so skip while homing.
+        if (motor.moving &&
+            (motor.homing_state == HomingState::IDLE ||
+             motor.homing_state == HomingState::COMPLETE)) {
+            bool neg_limit = CutterHal::HasMotionCanceledNegLimit(motor.motor_index);
+            bool pos_limit = CutterHal::HasMotionCanceledPosLimit(motor.motor_index);
+            if (neg_limit || pos_limit) {
+                motor.moving = false;
+                m_response.Event("alert")
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("cause", neg_limit ? "neg_limit" : "pos_limit")
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
+                    .Param("epoch", motor.move_id.epoch)
+                    .Param("seq", motor.move_id.seq);
+                SendResponse();
+
+                // Transition back to READY if no other motors moving
+                bool any_moving = false;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].moving) {
+                        any_moving = true;
+                        break;
+                    }
+                }
+                if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                    m_stateMachine.TransitionTo(State::READY);
+                }
+                continue;  // Skip other checks for this motor
+            }
         }
 
         // Check soft limits for velocity moves

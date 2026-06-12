@@ -845,8 +845,9 @@ TEST_F(MotorTest, EStopTriggerDuringMove) {
     TRIGGER_ESTOP(0);
     ctrl->Update();
 
-    // Should emit estop event with position and internal seq
-    EXPECT_TRUE(serial.HasEvent("estop"));
+    // Should emit a unified alert event (cause=estop) with position and seq
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=estop"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
     char expected_seq[32];
     snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
@@ -926,11 +927,220 @@ TEST_F(MotorTest, EStopEventIncludesEpoch) {
     ctrl->Update();
 
     // Event should include internal epoch and seq
-    EXPECT_TRUE(serial.HasEvent("estop"));
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=estop"));
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
     char expected_seq[32];
     snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
     EXPECT_TRUE(serial.HasOutput(expected_seq));
+}
+
+// === Limit Switch Trigger During Move ===
+// A limit switch tripping during a normal (non-homing) move emits two distinct
+// events: a "limit" sensor event (the switch changed state) and an "alert"
+// event (the motor was put into the alert state and its move canceled).
+// Otherwise open-loop steppers would report a false "done" and SDSK moves
+// would hang on the latched alert.
+
+TEST_F(MotorTest, LimitTriggerDuringMoveEmitsEvent) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Start a move and capture the internal seq from the ok response
+    serial.SendLine("move seq=42 motor=0 steps=10000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+
+    std::string output = serial.GetOutput();
+    size_t seq_pos = output.find("seq=");
+    ASSERT_NE(seq_pos, std::string::npos);
+    uint32_t internal_seq = 0;
+    sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
+    serial.ClearOutput();
+
+    // Hardware trips the positive limit and stops the motor
+    TRIGGER_POS_LIMIT(0);
+    ctrl->Update();
+
+    // Both the sensor event and the motor-alert event fire (not a false "done")
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=pos_limit"));
+    EXPECT_FALSE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasOutput("motor=0"));
+    char expected_seq[32];
+    snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
+    EXPECT_TRUE(serial.HasOutput(expected_seq));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, NegLimitTriggerReportsDirection) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    serial.SendLine("move motor=0 steps=-10000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=neg"));
+    EXPECT_TRUE(serial.HasEvent("alert"));
+    EXPECT_TRUE(serial.HasOutput("cause=neg_limit"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MotorTest, LimitTriggerReturnsToReady) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    serial.SendLine("move motor=0 steps=10000");
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetState(), State::WORKING);
+    serial.ClearOutput();
+
+    TRIGGER_POS_LIMIT(0);
+    ctrl->Update();
+
+    // With no other motors moving, controller returns to READY
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+TEST_F(MotorTest, NoLimitEventWhenNotMoving) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Alert latched but the live input never changed - no event should fire
+    g_fake.motion_canceled_pos_limit[0] = true;
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("limit"));
+}
+
+// === Limit Switch State Change Events ===
+// Every transition of a limit input must be reported, even while idle.
+
+TEST_F(MotorTest, LimitStateChangeEmitsEventWhenIdle) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Press the positive limit while the motor is idle
+    SET_POS_LIMIT(0, true);
+    ctrl->Update();
+
+    // Sensor event only - the motor was not moving, so it is not put in alert
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    EXPECT_TRUE(serial.HasOutput("value=1"));
+    EXPECT_FALSE(serial.HasEvent("alert"));
+}
+
+TEST_F(MotorTest, LimitReleaseEmitsEvent) {
+    ConfigureAndEnableStepper(0);
+    SET_POS_LIMIT(0, true);
+    ctrl->Update();          // press reported
+    serial.ClearOutput();
+
+    // Release the switch
+    SET_POS_LIMIT(0, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=pos"));
+    EXPECT_TRUE(serial.HasOutput("value=0"));
+}
+
+TEST_F(MotorTest, NegLimitStateChangeEmitsEvent) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    SET_NEG_LIMIT(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("limit"));
+    EXPECT_TRUE(serial.HasOutput("direction=neg"));
+    EXPECT_TRUE(serial.HasOutput("value=1"));
+}
+
+TEST_F(MotorTest, LimitNoEventWhenStateUnchanged) {
+    ConfigureAndEnableStepper(0);
+    SET_POS_LIMIT(0, true);
+    ctrl->Update();          // first change reported
+    serial.ClearOutput();
+
+    ctrl->Update();          // state unchanged - no repeat event
+
+    EXPECT_FALSE(serial.HasEvent("limit"));
+}
+
+TEST_F(MotorTest, LimitStateSeededAtConfigureNoSpuriousEvent) {
+    // A switch already active at configure time should not emit on first Update
+    SET_POS_LIMIT(0, true);
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasEvent("limit"));
+}
+
+// === Move Rejection ===
+// When the hardware rejects a move (alert still present, or commanded back
+// into an active limit), libCutter must report an error rather than falsely
+// replying "ok" while the motor stays put.
+
+TEST_F(MotorTest, RejectedMoveReportsError) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // Hardware will reject the move (e.g. sitting on a limit / alert present)
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("307"));        // MOVE_REJECTED
+    EXPECT_FALSE(serial.HasOutput("ok"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    // Must not get stuck in WORKING
+    EXPECT_NE(ctrl->GetState(), State::WORKING);
+}
+
+TEST_F(MotorTest, RejectedVelocityMoveReportsError) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("move_velocity motor=0 velocity=2000");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("307"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_NE(ctrl->GetState(), State::WORKING);
+}
+
+TEST_F(MotorTest, MoveSucceedsAfterRejectionCleared) {
+    ConfigureAndEnableStepper(0);
+    serial.ClearOutput();
+
+    // First move rejected (still on limit)
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("move motor=0 steps=1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("error"));
+    serial.ClearOutput();
+
+    // After backing off / clearing, the next move is accepted
+    SET_MOVE_REJECTED(0, false);
+    serial.SendLine("move motor=0 steps=-1000");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
 }
 
 // === Internal Command ID Tests ===
