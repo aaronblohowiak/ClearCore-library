@@ -5,7 +5,6 @@
 
 #include "CutterResponse.h"
 #include <cstring>
-#include <cstdio>
 
 namespace Cutter {
 
@@ -55,16 +54,28 @@ void ResponseWriter::AppendChar(char c) {
     }
 }
 
-void ResponseWriter::AppendInt(int32_t value) {
-    char temp[16];
-    snprintf(temp, sizeof(temp), "%d", static_cast<int>(value));
-    Append(temp);
+void ResponseWriter::AppendUInt(uint32_t value) {
+    // Manual base-10 conversion - no snprintf/stdio dependency.
+    // Bare-metal newlib's formatted I/O can fault (large stack frame,
+    // heap/_sbrk, or nano.specs not linked); this is self-contained.
+    char temp[11];                 // uint32 max = 4294967295 (10 digits) + NUL
+    char* p = temp + sizeof(temp);
+    *--p = '\0';
+    do {
+        *--p = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value != 0);
+    Append(p);
 }
 
-void ResponseWriter::AppendUInt(uint32_t value) {
-    char temp[16];
-    snprintf(temp, sizeof(temp), "%u", static_cast<unsigned>(value));
-    Append(temp);
+void ResponseWriter::AppendInt(int32_t value) {
+    if (value < 0) {
+        AppendChar('-');
+        // Negate in unsigned space so INT32_MIN is handled without UB.
+        AppendUInt(~static_cast<uint32_t>(value) + 1u);
+    } else {
+        AppendUInt(static_cast<uint32_t>(value));
+    }
 }
 
 ResponseWriter& ResponseWriter::Ok() {
