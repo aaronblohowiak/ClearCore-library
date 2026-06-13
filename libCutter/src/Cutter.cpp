@@ -587,8 +587,14 @@ void Controller::CheckMotors() {
             }
         }
 
-        // Check soft limits for velocity moves
-        if (motor.moving && motor.velocity_move && motor.soft_limits_enabled) {
+        // Check soft limits for velocity moves. Skip during an active homing
+        // sequence: the position counter is not yet referenced (zero is only set
+        // when homing completes) and homing deliberately drives into the limit,
+        // which sits outside the soft-limit range. Matches the homing exclusion
+        // on the alert check above.
+        if (motor.moving && motor.velocity_move && motor.soft_limits_enabled &&
+            (motor.homing_state == HomingState::IDLE ||
+             motor.homing_state == HomingState::COMPLETE)) {
             int32_t pos = CutterHal::GetMotorPosition(motor.motor_index);
             bool at_limit = false;
             // Use strict inequality so starting at boundary is allowed

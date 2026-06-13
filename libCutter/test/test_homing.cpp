@@ -156,6 +156,34 @@ TEST_F(HomingTest, ReleasingWaitsForSwitchToClear) {
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
 }
 
+// Soft limits must not be enforced during homing: the position counter is not yet
+// referenced and the seek deliberately drives into the limit (outside the
+// soft-limit range). The velocity_move flag can be left set from a prior move.
+TEST_F(HomingTest, SoftLimitsNotEnforcedDuringHoming) {
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=6 homing_direction=-1 "
+                    "soft_limits=true soft_min=0 soft_max=100000");
+    ctrl->Update();
+    serial.SendLine("enable motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    // Simulate a sticky velocity-move flag left over from a prior move_velocity.
+    ctrl->GetMotor(0)->velocity_move = true;
+
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    ASSERT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::SEEKING);
+
+    // Seek drives the position below the soft-limit floor (0).
+    g_fake.motor_position[0] = -500;
+    ctrl->Update();
+
+    // No soft_limit event fires and homing continues uninterrupted.
+    EXPECT_FALSE(serial.HasEvent("soft_limit"));
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::SEEKING);
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+}
+
 // === Homing in Positive Direction ===
 
 TEST_F(HomingTest, HomingPositiveDirection) {
