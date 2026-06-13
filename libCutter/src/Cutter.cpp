@@ -23,6 +23,8 @@ Controller::Controller(ISerial* serial)
     , m_homingOrder{}
     , m_homingCount(0)
     , m_currentHomingIndex(0)
+    , m_wasPortOpen(false)
+    , m_bannerSent(false)
 {
     // Initialize input buffer
     m_inputBuffer[0] = '\0';
@@ -44,6 +46,18 @@ Controller::Controller(ISerial* serial)
 void Controller::Update() {
     uint32_t now = CutterHal::Milliseconds();
 
+    // Detect a host (re)connection from the serial port-open edge. On USB this
+    // tracks the virtual-port DTR flag, so the banner is sent the moment the
+    // host opens the port - no need for the host to send a byte first.
+    bool portOpen = m_serial->PortIsOpen();
+    if (portOpen && !m_wasPortOpen) {
+        OnHostConnected();
+    } else if (!portOpen && m_wasPortOpen) {
+        // Host closed the port; re-arm the banner for the next connection.
+        m_bannerSent = false;
+    }
+    m_wasPortOpen = portOpen;
+
     // Process incoming serial data
     ProcessInput();
 
@@ -62,11 +76,12 @@ void Controller::ProcessInput() {
         int16_t c = m_serial->CharGet();
         if (c < 0) break;
 
-        // On first character, mark as connected and greet the host with a
-        // banner identifying the protocol/firmware versions and this board.
+        // Fallback for transports that do not report a port-open edge (e.g. a
+        // terminal that never asserts DTR): treat the first received byte as
+        // the connection. OnHostConnected() is idempotent, so this is a no-op
+        // when the port-open edge already greeted the host.
         if (m_stateMachine.GetState() == State::UNCONNECTED) {
-            m_stateMachine.MarkConnected();
-            SendBanner();
+            OnHostConnected();
         }
 
         if (c == '\n' || c == '\r') {
@@ -663,6 +678,17 @@ void Controller::SendResponse() {
     const char* resp = m_response.Finish();
     m_serial->Send(resp);
     m_response.Reset();
+}
+
+void Controller::OnHostConnected() {
+    if (m_stateMachine.GetState() == State::UNCONNECTED) {
+        m_stateMachine.MarkConnected();
+    }
+    // Greet exactly once per connection (re-armed on port close).
+    if (!m_bannerSent) {
+        SendBanner();
+        m_bannerSent = true;
+    }
 }
 
 void Controller::SendBanner() {

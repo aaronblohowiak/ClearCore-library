@@ -95,7 +95,23 @@ public:
         return true;
     }
 
+    /**
+     * @brief Whether the host has the port open (USB DTR on real hardware)
+     * @return Current simulated port-open state
+     */
+    bool PortIsOpen() override {
+        return port_open_;
+    }
+
     // === Test inspection methods ===
+
+    /**
+     * @brief Simulate the host opening/closing the serial port
+     * @param open New port-open state
+     */
+    void SetPortOpen(bool open) {
+        port_open_ = open;
+    }
 
     /**
      * @brief Get all output as a single string
@@ -201,4 +217,5 @@ private:
     std::string input_buffer_;
     std::string output_buffer_;
     size_t input_pos_ = 0;
+    bool port_open_ = true;  ///< Simulated host port-open (DTR) state; open by default
 };

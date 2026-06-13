@@ -41,6 +41,7 @@ public:
     virtual int32_t AvailableForRead() = 0;
     virtual bool SendChar(uint8_t c) = 0;
     virtual bool Send(const char* str) = 0;
+    virtual bool PortIsOpen() = 0;
 };
 }
 #endif
@@ -485,6 +486,9 @@ private:
     // Internal methods
     void ProcessInput();
     bool ReadLine();
+    /// Handle a host connection (port-open edge or first byte): mark connected
+    /// and emit the banner once. Idempotent within a connection.
+    void OnHostConnected();
     /// Emit the connection banner (debug line with protocol/version/device_id)
     void SendBanner();
     void DispatchCommand(const ParsedCommand& cmd);
@@ -503,6 +507,8 @@ private:
     uint8_t m_homingOrder[NUM_MOTORS];  ///< Motor indices sorted by enable_priority
     uint8_t m_homingCount;          ///< Number of motors to home
     uint8_t m_currentHomingIndex;   ///< Index into m_homingOrder for current motor
+    bool m_wasPortOpen;             ///< Last observed serial port-open state (for edge detection)
+    bool m_bannerSent;              ///< True once the connection banner was sent (re-armed on port close)
 
     // Built-in commands
     void CmdPing(const ParsedCommand& cmd);

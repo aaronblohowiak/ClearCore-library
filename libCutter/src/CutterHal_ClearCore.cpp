@@ -9,6 +9,7 @@
 
 #include "CutterHal.h"
 #include "ClearCore.h"
+#include "NvmManager.h"  // ClearCore.h does not pull this in; needed for NvmManager::SerialNumber()
 
 namespace CutterHal {
 

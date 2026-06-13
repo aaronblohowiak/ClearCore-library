@@ -46,7 +46,7 @@ The protocol accepts input and sends output via USB serial by default. It can be
 
 Commands are sent as single lines terminated by newline (`\n`). Responses are sent immediately after command processing. Asynchronous events (move completion, errors, etc.) are sent when they occur.
 
-**Connection banner.** The controller detects a host connection on the first byte it receives. At that moment, before the first command's response, it emits a one-time `debug` banner identifying itself:
+**Connection banner.** When a host opens the serial port, the controller emits a one-time `debug` banner identifying itself, before any command is sent:
 
 ```
 <- debug message="cutter ready" protocol=1 version=1.0.0 device_id=12648430
@@ -55,7 +55,7 @@ Commands are sent as single lines terminated by newline (`\n`). Responses are se
 - `protocol` / `version` match the values returned by the `version` command.
 - `device_id` is the board's factory serial number (the ClearCore NVM serial), stable across reboots and unique per board. Use it to tell one controller from another.
 
-Because the banner is triggered by the first received byte (not by USB enumeration), a client that opens the port and waits silently will not see it until it sends something. Send a `\n` (or any command such as `ping`) immediately after opening the port to elicit the banner.
+The banner is triggered by the USB virtual-port open (DTR) edge, so a client that opens the port and waits silently **will** receive it — no need to send anything first. It is emitted exactly once per connection and re-armed if the port is closed and reopened. As a fallback, a transport that never asserts DTR still gets the banner on the first byte it sends. Read and discard (or log) the banner after opening the port, before issuing commands.
 
 ---
 
