@@ -879,10 +879,11 @@ static void CmdEnableAll(Controller* ctrl, const ParsedCommand& cmd) {
 
 // === Homing State Machine (called from CheckMotors) ===
 
-// Complete homing and emit event
+// Complete homing and emit event. The caller is responsible for establishing the
+// zero reference (SetMotorPosition) before calling this - by the BACKING_OFF phase
+// the motor is already at its final resting position, clear of the switch.
 static void CompleteHoming(Controller* ctrl, MotorSlot& motor) {
     CutterHal::StopMotor(motor.motor_index, true);
-    CutterHal::SetMotorPosition(motor.motor_index, 0);
     motor.homing_state = HomingState::COMPLETE;
     motor.moving = false;
     motor.homed = true;
@@ -904,49 +905,63 @@ static void CompleteHoming(Controller* ctrl, MotorSlot& motor) {
     }
 }
 
-// Check for limit switch trigger during generic stepper homing
-// Uses ClearCore native limit switch support - motor auto-stops when limit triggers
+// Limit switch homing state machine. Uses ClearCore native limit support: the
+// motor auto-stops (and latches an alert) whenever the limit asserts during a
+// move. SEEKING/LATCHING detect contact via the latched alert; RELEASING watches
+// the live limit input so it can stop the instant the switch clears.
 static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
-    (void)ctrl;  // May be used in future for error handling
+    const uint8_t m = motor.motor_index;
+    const bool toward_neg = (motor.homing_direction < 0);
 
-    // Check if limit switch was triggered based on homing direction
-    bool limit_triggered = (motor.homing_direction < 0)
-        ? CutterHal::HasMotionCanceledNegLimit(motor.motor_index)
-        : CutterHal::HasMotionCanceledPosLimit(motor.motor_index);
+    // Latched-alert contact (motor was auto-stopped at the switch this move).
+    bool limit_triggered = toward_neg
+        ? CutterHal::HasMotionCanceledNegLimit(m)
+        : CutterHal::HasMotionCanceledPosLimit(m);
+
+    // Live switch state right now (true = hot/asserted), independent of alerts.
+    bool limit_active = toward_neg
+        ? CutterHal::InNegLimit(m)
+        : CutterHal::InPosLimit(m);
+
+    // Away from the switch is the sign opposite to homing_direction.
+    const int32_t away = -motor.homing_direction;  // +1 when homing negative
 
     switch (motor.homing_state) {
         case HomingState::SEEKING:
-            // Moving fast toward limit, motor auto-stops when limit triggers
+            // Fast approach; motor auto-stops when the limit trips.
             if (limit_triggered) {
-                // Clear alert to allow further motion
-                CutterHal::ClearMotorAlerts(motor.motor_index);
-                // Back off from limit (opposite to homing direction)
-                motor.homing_state = HomingState::BACKING_OFF;
-                int32_t backoff = motor.homing_backoff_distance;
-                if (motor.homing_direction < 0) {
-                    backoff = -backoff;  // Backoff in positive direction
-                }
-                CutterHal::MoveRelative(motor.motor_index, -backoff);
+                CutterHal::ClearMotorAlerts(m);
+                // Back away until the switch releases (variable distance).
+                motor.homing_state = HomingState::RELEASING;
+                CutterHal::MoveVelocity(m, motor.homing_seek_velocity * away);
             }
             break;
 
-        case HomingState::BACKING_OFF:
-            // Waiting for backoff move to complete
-            if (CutterHal::StepsComplete(motor.motor_index)) {
-                // Now approach slowly for latch
+        case HomingState::RELEASING:
+            // Backing away; stop the moment the switch goes inactive.
+            if (!limit_active) {
+                CutterHal::StopMotor(m, true);
+                // Creep back toward the switch for a precise re-trigger.
                 motor.homing_state = HomingState::LATCHING;
-                int32_t latch_vel = motor.homing_latch_velocity;
-                if (motor.homing_direction < 0) {
-                    latch_vel = -latch_vel;  // Move in negative direction
-                }
-                CutterHal::MoveVelocity(motor.motor_index, latch_vel);
+                CutterHal::MoveVelocity(m, motor.homing_latch_velocity * motor.homing_direction);
             }
             break;
 
         case HomingState::LATCHING:
-            // Slow approach for precise position, motor auto-stops at limit
-            if (limit_triggered) {
-                CutterHal::ClearMotorAlerts(motor.motor_index);
+            // Slow approach until the switch trips again - this is the datum.
+            if (limit_triggered || limit_active) {
+                CutterHal::ClearMotorAlerts(m);
+                // Move clear of the switch by the backoff distance, then zero
+                // at rest so position 0 has margin from the limit.
+                motor.homing_state = HomingState::BACKING_OFF;
+                CutterHal::MoveRelative(m, motor.homing_backoff_distance * away);
+            }
+            break;
+
+        case HomingState::BACKING_OFF:
+            // Wait for the clearance move to finish, then zero here.
+            if (CutterHal::StepsComplete(m)) {
+                CutterHal::SetMotorPosition(m, 0);
                 CompleteHoming(ctrl, motor);
             }
             break;

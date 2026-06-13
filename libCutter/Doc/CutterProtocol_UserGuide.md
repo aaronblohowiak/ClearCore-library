@@ -532,8 +532,15 @@ Stop a motor.
 
 Start homing sequence for a motor. The motor must be enabled.
 
-- **Generic steppers**: Move toward limit switch at seek velocity, back off, then approach slowly for precision
-- **ClearPath-SD/SK**: Move toward hard stop, detect via HLFB torque feedback
+- **ClearPath-SD/SK** (`homing_mode=msp`): Move toward hard stop, detect via HLFB torque feedback.
+- **Limit-switch homing** (steppers, or SDSK with `homing_mode=limit_switch`): a five-phase sequence that finds a precise, repeatable datum and then parks clear of the switch:
+  1. **seeking** — fast approach (`homing_seek_velocity`) in `homing_direction` until the switch trips.
+  2. **releasing** — back away until the switch's live input goes inactive. This is a *variable* distance, so it always clears the switch regardless of how far the fast seek overshot.
+  3. **latching** — creep back (`homing_latch_velocity`) until the switch trips again. This precise re-trigger is the home **datum**.
+  4. **backing_off** — move `homing_backoff` steps off the switch (measured from the datum).
+  5. **complete** — set position **0 at the resting point**, clear of the switch, and emit `event type=homed`.
+
+  Because zero is established after the clearance backoff, the switch contact ends up at `-homing_backoff` and **position 0 has margin from the limit** — you can command a move to 0 without risk of tripping the switch. (Set a soft-limit minimum of 0 to enforce this.) The in-progress phase is visible as `homing_state` in [`get_status`](#get_status).
 
 ```
 -> home motor=0 seq=1

@@ -1051,8 +1051,9 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
             const char* homing_state_str = "unknown";
             switch (motor.homing_state) {
                 case HomingState::SEEKING:     homing_state_str = "seeking"; break;
-                case HomingState::BACKING_OFF: homing_state_str = "backing_off"; break;
+                case HomingState::RELEASING:   homing_state_str = "releasing"; break;
                 case HomingState::LATCHING:    homing_state_str = "latching"; break;
+                case HomingState::BACKING_OFF: homing_state_str = "backing_off"; break;
                 default: break;
             }
             m_response.Param("homing_state", homing_state_str);

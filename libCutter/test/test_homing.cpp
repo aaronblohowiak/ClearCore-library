@@ -90,33 +90,41 @@ TEST_F(HomingTest, HomingSequenceComplete) {
     sscanf(output.c_str() + seq_pos, "seq=%u", &internal_seq);
     serial.ClearOutput();
 
-    // Phase 1: Seeking - motor moves toward limit switch
+    // Phase 1: Seeking - motor moves fast toward the limit switch
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::SEEKING);
 
-    // Trigger limit switch (ClearCore stops motor and sets alert)
+    // Trigger limit switch (ClearCore stops motor and sets alert + live input)
     TRIGGER_NEG_LIMIT(0);
     ctrl->Update();
 
-    // Phase 2: Backing off
-    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::BACKING_OFF);
+    // Phase 2: Releasing - backing away until the switch goes inactive
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::RELEASING);
     serial.ClearOutput();
 
-    // Complete backoff move
-    COMPLETE_MOVE(0);
+    // Simulate the switch releasing as the motor backs off the flag
+    SET_NEG_LIMIT(0, false);
     ctrl->Update();
 
-    // Phase 3: Latching - slow approach
+    // Phase 3: Latching - slow approach back toward the switch
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
     serial.ClearOutput();
 
-    // Trigger limit switch again for final latch
+    // Switch trips again at the precise datum
     TRIGGER_NEG_LIMIT(0);
     ctrl->Update();
 
-    // Should be complete
+    // Phase 4: Backing off - clearance move away from the switch, then zero
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::BACKING_OFF);
+    serial.ClearOutput();
+
+    // Complete the clearance backoff move
+    COMPLETE_MOVE(0);
+    ctrl->Update();
+
+    // Should be complete, zeroed at the rest position (clear of the switch)
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::COMPLETE);
     EXPECT_FALSE(ctrl->GetMotor(0)->moving);
-    EXPECT_EQ(g_fake.motor_position[0], 0);  // Position set to zero
+    EXPECT_EQ(g_fake.motor_position[0], 0);  // Zero set at rest, off the switch
 
     EXPECT_TRUE(serial.HasEvent("homed"));
     EXPECT_TRUE(serial.HasOutput("motor=0"));
@@ -124,6 +132,28 @@ TEST_F(HomingTest, HomingSequenceComplete) {
     snprintf(expected_seq, sizeof(expected_seq), "seq=%u", internal_seq);
     EXPECT_TRUE(serial.HasOutput(expected_seq));
     EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+// Releasing waits for the live switch to clear; it does not advance on a fixed
+// distance. While the switch stays hot, homing stays in RELEASING.
+TEST_F(HomingTest, ReleasingWaitsForSwitchToClear) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::RELEASING);
+
+    // Switch still asserted across several ticks -> still releasing, not latching.
+    ctrl->Update();
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::RELEASING);
+
+    // Only once the switch actually releases does it advance to latching.
+    SET_NEG_LIMIT(0, false);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
 }
 
 // === Homing in Positive Direction ===
@@ -147,8 +177,22 @@ TEST_F(HomingTest, HomingPositiveDirection) {
     TRIGGER_POS_LIMIT(0);
     ctrl->Update();
 
-    // Should advance to backing off
+    // Should advance to releasing (back away until the switch clears)
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::RELEASING);
+
+    // Release the switch -> slow latch approach
+    SET_POS_LIMIT(0, false);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
+
+    // Re-trigger at the datum -> clearance backoff -> zero
+    TRIGGER_POS_LIMIT(0);
+    ctrl->Update();
     EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::BACKING_OFF);
+    COMPLETE_MOVE(0);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::COMPLETE);
+    EXPECT_EQ(g_fake.motor_position[0], 0);
 }
 
 // === Limit Switch Required for Homing ===

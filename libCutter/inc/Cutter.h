@@ -102,14 +102,23 @@ enum class HomingMode : uint8_t {
 
     Used for limit switch homing (both stepper and SDSK when homing_mode=limit_switch).
 
-    Homing sequence: IDLE -> SEEKING -> BACKING_OFF -> LATCHING -> COMPLETE
+    Homing sequence: IDLE -> SEEKING -> RELEASING -> LATCHING -> BACKING_OFF -> COMPLETE
+
+    SEEKING runs fast at the switch until it trips. RELEASING backs away until the
+    switch releases (live input goes inactive), guaranteeing a clean re-approach.
+    LATCHING then creeps back at latch velocity until the switch trips again - that
+    precise re-trigger is the home datum. BACKING_OFF then moves homing_backoff
+    steps off the switch and zeroes there, so position 0 sits clear of the switch
+    (the switch contact ends up at -homing_backoff) and can be commanded without
+    risk of tripping the limit.
 **/
 enum class HomingState : uint8_t {
     IDLE = 0,           ///< Not homing
-    SEEKING,            ///< Moving toward endstop at seek velocity
-    BACKING_OFF,        ///< Backing away from endstop
-    LATCHING,           ///< Slow approach for precise contact
-    COMPLETE,           ///< Homing complete, position set to zero
+    SEEKING,            ///< Fast approach toward endstop until it trips
+    RELEASING,          ///< Backing away until the switch releases (live input inactive)
+    LATCHING,           ///< Slow approach until the switch trips again (home datum)
+    BACKING_OFF,        ///< Final clearance backoff from the datum, then zero at rest
+    COMPLETE,           ///< Homing complete, position zeroed clear of the switch
 };
 
 /**
