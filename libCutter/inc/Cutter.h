@@ -47,30 +47,8 @@ public:
 
 namespace Cutter {
 
-/**
-    \brief Command identifier for correlating async events to commands
-
-    Stores epoch and seq pair assigned internally by the controller.
-    Every command is assigned a unique seq (incrementing counter) and the
-    current epoch. User-supplied epoch/seq in commands are for verification
-    only (sync checking), not for identifying the command.
-
-    \par Usage
-    CommandId is stored when initiating async operations:
-    - Motor moves: Stored in MotorSlot::move_id, emitted in "done" and "soft_limit" events
-    - Motor enable: Stored in MotorSlot::enable_id, emitted in "hlfb_timeout" error
-    - Pin timeout: Stored in DigitalOutState::set_id, emitted in "pin_timeout" event
-
-    \par Event Correlation
-    Host sends: `move motor=0 steps=1000`
-    Cutter responds: `ok epoch=0 seq=5 motor=0`
-    Later: `event type=done motor=0 epoch=0 seq=5 position=1000`
-    This allows the host to match async events back to the originating command.
-**/
-struct CommandId {
-    uint32_t epoch;
-    uint32_t seq;
-};
+// CommandId is defined in CutterResponse.h (protocol layer) so ResponseWriter
+// can emit epoch/seq directly; see Ok/Error/Event(const CommandId&).
 
 // Forward declarations
 struct PinSlot;
@@ -507,6 +485,8 @@ private:
     // Internal methods
     void ProcessInput();
     bool ReadLine();
+    /// Emit the connection banner (debug line with protocol/version/device_id)
+    void SendBanner();
     void DispatchCommand(const ParsedCommand& cmd);
     void CheckPins();
     void CheckMotors();

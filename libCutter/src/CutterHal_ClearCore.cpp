@@ -377,6 +377,12 @@ uint32_t Milliseconds() {
     return ClearCore::SysTiming::Instance().Milliseconds();
 }
 
+// === Identity ===
+
+uint32_t DeviceId() {
+    return ClearCore::NvmManager::Instance().SerialNumber();
+}
+
 }  // namespace CutterHal
 
 #endif  // CUTTER_PLATFORM_CLEARCORE

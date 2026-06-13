@@ -305,6 +305,11 @@ uint32_t Milliseconds() {
     return g_fake.time_ms;
 }
 
+uint32_t DeviceId() {
+    // Fixed sentinel so tests can assert on a known device id
+    return 0xC0FFEE;
+}
+
 }  // namespace CutterHal
 
 #endif  // CUTTER_PLATFORM_TEST

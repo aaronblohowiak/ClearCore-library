@@ -73,6 +73,10 @@ ResponseWriter& ResponseWriter::Ok() {
     return *this;
 }
 
+ResponseWriter& ResponseWriter::Ok(const CommandId& id) {
+    return Ok().Param("epoch", id.epoch).Param("seq", id.seq);
+}
+
 ResponseWriter& ResponseWriter::Error(uint32_t code, const char* message) {
     Reset();
     Append("error code=");
@@ -83,11 +87,30 @@ ResponseWriter& ResponseWriter::Error(uint32_t code, const char* message) {
     return *this;
 }
 
+ResponseWriter& ResponseWriter::Error(uint32_t code, const char* message, const CommandId& id) {
+    return Error(code, message).Param("epoch", id.epoch).Param("seq", id.seq);
+}
+
 ResponseWriter& ResponseWriter::Event(const char* type) {
     Reset();
     Append("event type=");
     Append(type);
     return *this;
+}
+
+ResponseWriter& ResponseWriter::Event(const char* type, const CommandId& id) {
+    return Event(type).Param("epoch", id.epoch).Param("seq", id.seq);
+}
+
+ResponseWriter& ResponseWriter::Status(const char* type) {
+    Reset();
+    Append("status type=");
+    Append(type);
+    return *this;
+}
+
+ResponseWriter& ResponseWriter::Status(const char* type, const CommandId& id) {
+    return Status(type).Param("epoch", id.epoch).Param("seq", id.seq);
 }
 
 ResponseWriter& ResponseWriter::Debug(const char* message) {

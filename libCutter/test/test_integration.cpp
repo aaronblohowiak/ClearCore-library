@@ -25,6 +25,28 @@ protected:
     }
 };
 
+// === Connection banner ===
+
+TEST_F(IntegrationTest, ConnectionBannerEmittedOnFirstContact) {
+    EXPECT_EQ(ctrl->GetState(), State::UNCONNECTED);
+
+    serial.SendLine("ping");
+    ctrl->Update();
+
+    // A debug banner precedes the first command's response and carries the
+    // protocol/firmware versions plus the board's device id.
+    auto lines = serial.GetOutputLines();
+    ASSERT_GE(lines.size(), 2u);
+    EXPECT_EQ(lines[0], "debug message=\"cutter ready\" protocol=1 version=1.0.0 device_id=12648430");
+    EXPECT_EQ(lines[1].rfind("ok", 0), 0u);  // command response follows
+
+    // Banner is emitted only once, not on subsequent commands.
+    serial.ClearOutput();
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasOutput("cutter ready"));
+}
+
 // === Full Connect -> Configure -> Enable -> Move -> Complete Cycle ===
 
 TEST_F(IntegrationTest, FullMotionCycle) {

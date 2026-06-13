@@ -62,9 +62,11 @@ void Controller::ProcessInput() {
         int16_t c = m_serial->CharGet();
         if (c < 0) break;
 
-        // On first character, mark as connected
+        // On first character, mark as connected and greet the host with a
+        // banner identifying the protocol/firmware versions and this board.
         if (m_stateMachine.GetState() == State::UNCONNECTED) {
             m_stateMachine.MarkConnected();
+            SendBanner();
         }
 
         if (c == '\n' || c == '\r') {
@@ -241,12 +243,10 @@ void Controller::CheckPins() {
                 // Check error trigger
                 if (pin.digital_in.error_trigger_enabled && val == pin.digital_in.error_trigger_value) {
                     m_stateMachine.EnterError(ErrorCode::PIN_ERROR_TRIGGER, "Digital input error trigger");
-                    m_response.Event("error")
+                    m_response.Event("error", pin.digital_in.config_id)
                         .Param("code", static_cast<uint32_t>(ErrorCode::PIN_ERROR_TRIGGER))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
-                        .Param("message", "Error trigger activated")
-                        .Param("epoch", pin.digital_in.config_id.epoch)
-                        .Param("seq", pin.digital_in.config_id.seq);
+                        .Param("message", "Error trigger activated");
                     SendResponse();
                     // Stop all motors on error
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -267,11 +267,9 @@ void Controller::CheckPins() {
                 // Report changes
                 if (pin.digital_in.report_changes && val != pin.digital_in.last_value) {
                     pin.digital_in.last_value = val;
-                    m_response.Event("input")
+                    m_response.Event("input", pin.digital_in.config_id)
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
-                        .Param("value", val)
-                        .Param("epoch", pin.digital_in.config_id.epoch)
-                        .Param("seq", pin.digital_in.config_id.seq);
+                        .Param("value", val);
                     SendResponse();
                 }
 
@@ -289,22 +287,18 @@ void Controller::CheckPins() {
 
                     if (risen && (pin.digital_in.report_edges == EdgeMode::RISING ||
                                   pin.digital_in.report_edges == EdgeMode::BOTH)) {
-                        m_response.Event("edge")
+                        m_response.Event("edge", pin.digital_in.config_id)
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("direction", "rising")
-                            .Param("value", true)
-                            .Param("epoch", pin.digital_in.config_id.epoch)
-                            .Param("seq", pin.digital_in.config_id.seq);
+                            .Param("value", true);
                         SendResponse();
                     }
                     if (fallen && (pin.digital_in.report_edges == EdgeMode::FALLING ||
                                    pin.digital_in.report_edges == EdgeMode::BOTH)) {
-                        m_response.Event("edge")
+                        m_response.Event("edge", pin.digital_in.config_id)
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("direction", "falling")
-                            .Param("value", false)
-                            .Param("epoch", pin.digital_in.config_id.epoch)
-                            .Param("seq", pin.digital_in.config_id.seq);
+                            .Param("value", false);
                         SendResponse();
                     }
                 }
@@ -318,12 +312,10 @@ void Controller::CheckPins() {
                 // Check hardware fault (overcurrent)
                 if (CutterHal::IsPinInFault(pin.pin_index)) {
                     m_stateMachine.EnterError(ErrorCode::PIN_OVERCURRENT, "Pin overcurrent");
-                    m_response.Event("error")
+                    m_response.Event("error", pin.digital_out.config_id)
                         .Param("code", static_cast<uint32_t>(ErrorCode::PIN_OVERCURRENT))
                         .Param("pin", static_cast<int32_t>(pin.pin_index))
-                        .Param("message", "Pin overcurrent fault")
-                        .Param("epoch", pin.digital_out.config_id.epoch)
-                        .Param("seq", pin.digital_out.config_id.seq);
+                        .Param("message", "Pin overcurrent fault");
                     SendResponse();
                     // Stop all motors on error
                     for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -343,10 +335,8 @@ void Controller::CheckPins() {
                         pin.digital_out.current_value = false;
                         pin.digital_out.max_raised_ms = 0;  // Clear timeout
 
-                        m_response.Event("pin_timeout")
-                            .Param("pin", static_cast<int32_t>(pin.pin_index))
-                            .Param("epoch", pin.digital_out.set_id.epoch)
-                            .Param("seq", pin.digital_out.set_id.seq);
+                        m_response.Event("pin_timeout", pin.digital_out.set_id)
+                            .Param("pin", static_cast<int32_t>(pin.pin_index));
                         SendResponse();
                     }
                 }
@@ -360,13 +350,11 @@ void Controller::CheckPins() {
                 if (pin.analog_in.error_threshold_enabled) {
                     if (val < pin.analog_in.error_threshold_low || val > pin.analog_in.error_threshold_high) {
                         m_stateMachine.EnterError(ErrorCode::ANALOG_THRESHOLD, "Analog error threshold");
-                        m_response.Event("error")
+                        m_response.Event("error", pin.analog_in.config_id)
                             .Param("code", static_cast<uint32_t>(ErrorCode::ANALOG_THRESHOLD))
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
                             .Param("value", static_cast<int32_t>(val))
-                            .Param("message", "Analog threshold exceeded")
-                            .Param("epoch", pin.analog_in.config_id.epoch)
-                            .Param("seq", pin.analog_in.config_id.seq);
+                            .Param("message", "Analog threshold exceeded");
                         SendResponse();
                         // Stop all motors on error
                         for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -383,11 +371,9 @@ void Controller::CheckPins() {
                 if (pin.analog_in.report_interval_ms > 0) {
                     if ((now - pin.analog_in.last_report_time) >= pin.analog_in.report_interval_ms) {
                         pin.analog_in.last_report_time = now;
-                        m_response.Event("analog")
+                        m_response.Event("analog", pin.analog_in.config_id)
                             .Param("pin", static_cast<int32_t>(pin.pin_index))
-                            .Param("value", static_cast<int32_t>(val))
-                            .Param("epoch", pin.analog_in.config_id.epoch)
-                            .Param("seq", pin.analog_in.config_id.seq);
+                            .Param("value", static_cast<int32_t>(val));
                         SendResponse();
                     }
                 }
@@ -412,12 +398,10 @@ void Controller::CheckMotors() {
         // Check for hardware fault
         if (CutterHal::IsMotorInFault(motor.motor_index)) {
             m_stateMachine.EnterError(ErrorCode::MOTOR_FAULT, "Motor hardware fault");
-            m_response.Event("error")
+            m_response.Event("error", motor.enable_id)
                 .Param("code", static_cast<uint32_t>(ErrorCode::MOTOR_FAULT))
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
-                .Param("message", "Motor hardware fault")
-                .Param("epoch", motor.enable_id.epoch)
-                .Param("seq", motor.enable_id.seq);
+                .Param("message", "Motor hardware fault");
             SendResponse();
             // Stop all motors
             for (size_t j = 0; j < NUM_MOTORS; j++) {
@@ -438,25 +422,21 @@ void Controller::CheckMotors() {
             bool pos_now = CutterHal::InPosLimit(motor.motor_index);
             if (pos_now != motor.last_pos_limit) {
                 motor.last_pos_limit = pos_now;
-                m_response.Event("limit")
+                m_response.Event("limit", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("direction", "pos")
                     .Param("value", pos_now)
-                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
-                    .Param("epoch", motor.move_id.epoch)
-                    .Param("seq", motor.move_id.seq);
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
                 SendResponse();
             }
             bool neg_now = CutterHal::InNegLimit(motor.motor_index);
             if (neg_now != motor.last_neg_limit) {
                 motor.last_neg_limit = neg_now;
-                m_response.Event("limit")
+                m_response.Event("limit", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("direction", "neg")
                     .Param("value", neg_now)
-                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
-                    .Param("epoch", motor.move_id.epoch)
-                    .Param("seq", motor.move_id.seq);
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
                 SendResponse();
             }
         }
@@ -466,11 +446,9 @@ void Controller::CheckMotors() {
             uint8_t hlfb_state = CutterHal::GetHlfbState(motor.motor_index);
             if (hlfb_state != motor.last_hlfb_state) {
                 motor.last_hlfb_state = hlfb_state;
-                m_response.Event("hlfb")
+                m_response.Event("hlfb", motor.enable_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
-                    .Param("state", static_cast<int32_t>(hlfb_state))
-                    .Param("epoch", motor.enable_id.epoch)
-                    .Param("seq", motor.enable_id.seq);
+                    .Param("state", static_cast<int32_t>(hlfb_state));
                 SendResponse();
             }
         }
@@ -502,11 +480,9 @@ void Controller::CheckMotors() {
                     // HLFB timeout
                     m_stateMachine.EnterError(ErrorCode::HLFB_TIMEOUT,
                                              "Motor HLFB timeout");
-                    m_response.Event("error")
+                    m_response.Event("error", motor.enable_id)
                         .Param("code", static_cast<uint32_t>(ErrorCode::HLFB_TIMEOUT))
-                        .Param("motor", static_cast<int32_t>(motor.motor_index))
-                        .Param("epoch", motor.enable_id.epoch)
-                        .Param("seq", motor.enable_id.seq);
+                        .Param("motor", static_cast<int32_t>(motor.motor_index));
                     SendResponse();
                     m_enableAllActive = false;  // Cancel enable_all on error
                 }
@@ -536,12 +512,10 @@ void Controller::CheckMotors() {
         // canceled and it is now latched in alert until clear_alerts.
         if (motor.moving && CutterHal::HasMotionCanceledEStop(motor.motor_index)) {
             motor.moving = false;
-            m_response.Event("alert")
+            m_response.Event("alert", motor.move_id)
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
                 .Param("cause", "estop")
-                .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
-                .Param("epoch", motor.move_id.epoch)
-                .Param("seq", motor.move_id.seq);
+                .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
             SendResponse();
 
             // Check if any motors still moving
@@ -577,12 +551,10 @@ void Controller::CheckMotors() {
             bool pos_limit = CutterHal::HasMotionCanceledPosLimit(motor.motor_index);
             if (neg_limit || pos_limit) {
                 motor.moving = false;
-                m_response.Event("alert")
+                m_response.Event("alert", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("cause", neg_limit ? "neg_limit" : "pos_limit")
-                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index))
-                    .Param("epoch", motor.move_id.epoch)
-                    .Param("seq", motor.move_id.seq);
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
                 SendResponse();
 
                 // Transition back to READY if no other motors moving
@@ -611,10 +583,8 @@ void Controller::CheckMotors() {
             if (at_limit) {
                 CutterHal::StopMotor(motor.motor_index, true);
                 motor.moving = false;
-                m_response.Event("soft_limit")
+                m_response.Event("soft_limit", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
-                    .Param("epoch", motor.move_id.epoch)
-                    .Param("seq", motor.move_id.seq)
                     .Param("position", pos);
                 SendResponse();
 
@@ -646,10 +616,8 @@ void Controller::CheckMotors() {
 
             if (move_complete) {
                 motor.moving = false;
-                m_response.Event("done")
+                m_response.Event("done", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
-                    .Param("epoch", motor.move_id.epoch)
-                    .Param("seq", motor.move_id.seq)
                     .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
                 SendResponse();
 
@@ -695,6 +663,17 @@ void Controller::SendResponse() {
     const char* resp = m_response.Finish();
     m_serial->Send(resp);
     m_response.Reset();
+}
+
+void Controller::SendBanner() {
+    // Emitted once when a host first connects, before the first command's
+    // response. Carries the protocol/firmware versions and the board's
+    // unique device id so a client can identify what it is talking to.
+    m_response.Debug("cutter ready")
+        .Param("protocol", PROTOCOL_VERSION)
+        .Param("version", CUTTER_VERSION)
+        .Param("device_id", CutterHal::DeviceId());
+    SendResponse();
 }
 
 PinSlot* Controller::GetPin(uint8_t index) {
@@ -780,10 +759,8 @@ void Controller::StartNextHoming() {
             m_stateMachine.TransitionTo(State::WORKING);
         }
 
-        m_response.Event("homing_started")
-            .Param("motor", static_cast<int32_t>(motor_idx))
-            .Param("epoch", m_enableAllId.epoch)
-            .Param("seq", m_enableAllId.seq);
+        m_response.Event("homing_started", m_enableAllId)
+            .Param("motor", static_cast<int32_t>(motor_idx));
         SendResponse();
 
         return;  // Wait for this motor to finish homing
@@ -791,9 +768,7 @@ void Controller::StartNextHoming() {
 
     // All motors homed - emit completion event
     m_enableAllActive = false;
-    m_response.Event("all_homed")
-        .Param("epoch", m_enableAllId.epoch)
-        .Param("seq", m_enableAllId.seq)
+    m_response.Event("all_homed", m_enableAllId)
         .Param("count", static_cast<int32_t>(m_homingCount));
     SendResponse();
 }
@@ -802,9 +777,7 @@ void Controller::StartNextHoming() {
 
 void Controller::CmdPing(const ParsedCommand& cmd) {
     (void)cmd;  // User-supplied params not needed for response
-    m_response.Ok();
-    m_response.Param("epoch", m_currentCommandId.epoch);
-    m_response.Param("seq", m_currentCommandId.seq);
+    m_response.Ok(m_currentCommandId);
     SendResponse();
 }
 
@@ -828,24 +801,18 @@ void Controller::CmdReset(const ParsedCommand& cmd) {
             m_motors[i].motor_index = static_cast<uint8_t>(i);
         }
 
-        m_response.Ok();
-        m_response.Param("epoch", m_currentCommandId.epoch);
-        m_response.Param("seq", m_currentCommandId.seq);
+        m_response.Ok(m_currentCommandId);
         m_response.Param("new_epoch", m_stateMachine.GetEpoch());
     } else {
         m_response.Error(static_cast<uint32_t>(ErrorCode::INVALID_STATE),
-                       "Not in error state");
-        m_response.Param("epoch", m_currentCommandId.epoch);
-        m_response.Param("seq", m_currentCommandId.seq);
+                       "Not in error state", m_currentCommandId);
     }
     SendResponse();
 }
 
 void Controller::CmdStatus(const ParsedCommand& cmd) {
     (void)cmd;  // User-supplied params not needed for response
-    m_response.Ok();
-    m_response.Param("epoch", m_currentCommandId.epoch);
-    m_response.Param("seq", m_currentCommandId.seq);
+    m_response.Ok(m_currentCommandId);
     m_response.Param("state", StateName(m_stateMachine.GetState()));
 
     if (m_stateMachine.GetState() == State::ERROR) {
@@ -857,9 +824,7 @@ void Controller::CmdStatus(const ParsedCommand& cmd) {
 
 void Controller::CmdVersion(const ParsedCommand& cmd) {
     (void)cmd;  // User-supplied params not needed for response
-    m_response.Ok();
-    m_response.Param("epoch", m_currentCommandId.epoch);
-    m_response.Param("seq", m_currentCommandId.seq);
+    m_response.Ok(m_currentCommandId);
     m_response.Param("version", CUTTER_VERSION);
     m_response.Param("protocol", PROTOCOL_VERSION);
     SendResponse();
@@ -880,26 +845,20 @@ void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
     m_stateMachine.EnterError(ErrorCode::EMERGENCY_STOP, "Emergency stop");
 
     // Send response with command's assigned ID and the new epoch after error
-    m_response.Ok();
-    m_response.Param("epoch", m_currentCommandId.epoch);
-    m_response.Param("seq", m_currentCommandId.seq);
+    m_response.Ok(m_currentCommandId);
     m_response.Param("new_epoch", m_stateMachine.GetEpoch());
     SendResponse();
 
     // Send error event
-    m_response.Event("error")
+    m_response.Event("error", m_currentCommandId)
         .Param("code", static_cast<uint32_t>(ErrorCode::EMERGENCY_STOP))
-        .Param("epoch", m_currentCommandId.epoch)
-        .Param("seq", m_currentCommandId.seq)
         .Param("message", "Emergency stop activated");
     SendResponse();
 }
 
 void Controller::CmdGetNextSeq(const ParsedCommand& cmd) {
     (void)cmd;  // User-supplied params not needed for response
-    m_response.Ok();
-    m_response.Param("epoch", m_currentCommandId.epoch);
-    m_response.Param("seq", m_currentCommandId.seq);
+    m_response.Ok(m_currentCommandId);
     m_response.Param("next_seq", m_nextSeq);
     SendResponse();
 }
@@ -957,25 +916,13 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
         }
     }
 
-    // If nothing configured, just send ok with counts=0
-    if (pin_count == 0 && motor_count == 0) {
-        m_response.Ok();
-        m_response.Param("epoch", m_currentCommandId.epoch);
-        m_response.Param("seq", m_currentCommandId.seq);
-        m_response.Param("pin_count", static_cast<int32_t>(0));
-        m_response.Param("motor_count", static_cast<int32_t>(0));
-        SendResponse();
-        return;
-    }
-
-    // Send one response per configured pin
+    // Send one status row per configured pin. When nothing is configured,
+    // both loops emit nothing and only the terminating summary row is sent.
     for (size_t i = 0; i < NUM_PINS; i++) {
         const PinSlot& pin = m_pins[i];
         if (pin.mode == PinMode::UNCONFIGURED) continue;
 
-        m_response.Event("pin");
-        m_response.Param("epoch", m_currentCommandId.epoch);
-        m_response.Param("seq", m_currentCommandId.seq);
+        m_response.Status("pin", m_currentCommandId);
         m_response.Param("pin", static_cast<int32_t>(i));
         m_response.Param("mode", PinModeName(pin.mode));
 
@@ -1050,11 +997,9 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
         const MotorSlot& motor = m_motors[i];
         if (motor.type == MotorType::UNCONFIGURED) continue;
 
-        m_response.Event("motor");
-        m_response.Param("epoch", m_currentCommandId.epoch);
-        m_response.Param("seq", m_currentCommandId.seq);
+        m_response.Status("motor", m_currentCommandId);
         m_response.Param("motor", static_cast<int32_t>(i));
-        m_response.Param("type", MotorTypeName(motor.type));
+        m_response.Param("motor_type", MotorTypeName(motor.type));
         m_response.Param("enabled", motor.enabled);
         m_response.Param("moving", motor.moving);
         m_response.Param("position", CutterHal::GetMotorPosition(motor.motor_index));
@@ -1090,10 +1035,9 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
         SendResponse();
     }
 
-    // Send final ok with counts
-    m_response.Ok();
-    m_response.Param("epoch", m_currentCommandId.epoch);
-    m_response.Param("seq", m_currentCommandId.seq);
+    // Terminating summary row with counts. This (not an "ok") marks the end
+    // of the get_status stream; clients read status rows until type=summary.
+    m_response.Status("summary", m_currentCommandId);
     m_response.Param("pin_count", static_cast<int32_t>(pin_count));
     m_response.Param("motor_count", static_cast<int32_t>(motor_count));
     SendResponse();

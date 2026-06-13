@@ -402,4 +402,17 @@ bool HasMotionCanceledEStop(uint8_t motor);
 **/
 uint32_t Milliseconds();
 
+// === Identity ===
+
+/**
+    \brief Get the board's factory device identifier (serial number)
+
+    On ClearCore this is the board serial number stored in NVM
+    (ClearCore::NvmManager::SerialNumber()), unique per board. On the test
+    platform it returns a fixed sentinel.
+
+    \return 32-bit device id
+**/
+uint32_t DeviceId();
+
 }  // namespace CutterHal

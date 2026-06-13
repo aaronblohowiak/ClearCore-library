@@ -118,8 +118,8 @@
       "description": "Get all configured pins and motors",
       "valid_states": ["*"],
       "params": {},
-      "response_params": ["pin_count", "motor_count"],
-      "emits_events": ["pin", "motor"]
+      "emits_status": ["pin", "motor", "summary"],
+      "response_note": "Emits one 'status type=pin' row per configured pin and one 'status type=motor' row per configured motor, terminated by a 'status type=summary' row carrying pin_count/motor_count. Does NOT emit a trailing 'ok'; the summary row marks the end of the stream."
     },
 
     "configure_sdsk": {
@@ -430,21 +430,22 @@
     }
   },
 
-  "events": {
+  "status": {
+    "_comment": "Solicited query-payload rows (prefix 'status type=...'). Not asynchronous events. Emitted by get_status; carry the requesting command's epoch/seq.",
     "pin": {
-      "description": "Pin status (from get_status)",
+      "description": "Pin status row (from get_status)",
       "params": {
         "pin": { "type": "pin_index" },
         "mode": { "type": "string" },
-        "epoch": { "type": "uint32", "optional": true },
-        "seq": { "type": "uint32", "optional": true }
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
     "motor": {
-      "description": "Motor status (from get_status)",
+      "description": "Motor status row (from get_status)",
       "params": {
         "motor": { "type": "motor_index" },
-        "type": { "type": "string" },
+        "motor_type": { "type": "string" },
         "enabled": { "type": "bool" },
         "moving": { "type": "bool" },
         "position": { "type": "int32" },
@@ -452,10 +453,22 @@
         "homing_mode": { "type": "string" },
         "vel_max": { "type": "int32" },
         "accel_max": { "type": "int32" },
-        "epoch": { "type": "uint32", "optional": true },
-        "seq": { "type": "uint32", "optional": true }
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
       }
     },
+    "summary": {
+      "description": "Terminating row for a get_status stream; carries counts and marks the end (no trailing 'ok')",
+      "params": {
+        "pin_count": { "type": "int32" },
+        "motor_count": { "type": "int32" },
+        "epoch": { "type": "uint32" },
+        "seq": { "type": "uint32" }
+      }
+    }
+  },
+
+  "events": {
     "done": {
       "description": "Motor move completed",
       "params": {
@@ -593,6 +606,26 @@
       "prefix": "event",
       "params": ["type"],
       "description": "Asynchronous event"
+    },
+    "status": {
+      "prefix": "status",
+      "params": ["type"],
+      "description": "Solicited query-payload row (e.g. get_status); not an asynchronous event"
+    },
+    "debug": {
+      "prefix": "debug",
+      "params": ["message"],
+      "description": "Human-oriented diagnostic line; carries no command id. Clients may log or ignore it."
+    }
+  },
+
+  "connection_banner": {
+    "_comment": "A single 'debug' line emitted once when a host first connects (on the first byte received), before the first command's response.",
+    "format": "debug message=\"cutter ready\" protocol=<protocol_version> version=<firmware_version> device_id=<uint32>",
+    "params": {
+      "protocol": { "type": "string", "description": "Protocol version (matches the 'version' command's protocol param)" },
+      "version": { "type": "string", "description": "Firmware version (matches the 'version' command's version param)" },
+      "device_id": { "type": "uint32", "description": "Board factory serial number (ClearCore NVM serial); stable per board" }
     }
   }
 }

@@ -18,6 +18,34 @@
 namespace Cutter {
 
 /**
+    \brief Command identifier for correlating async events to commands
+
+    Stores epoch and seq pair assigned internally by the controller.
+    Every command is assigned a unique seq (incrementing counter) and the
+    current epoch. User-supplied epoch/seq in commands are for verification
+    only (sync checking), not for identifying the command.
+
+    \par Usage
+    CommandId is stored when initiating async operations:
+    - Motor moves: Stored in MotorSlot::move_id, emitted in "done" and "soft_limit" events
+    - Motor enable: Stored in MotorSlot::enable_id, emitted in "hlfb_timeout" error
+    - Pin timeout: Stored in DigitalOutState::set_id, emitted in "pin_timeout" event
+
+    \par Event Correlation
+    Host sends: `move motor=0 steps=1000`
+    Cutter responds: `ok epoch=0 seq=5 motor=0`
+    Later: `event type=done epoch=0 seq=5 motor=0 position=1000`
+    This allows the host to match async events back to the originating command.
+
+    \note Every ok/error/event carries the id directly after the verb. Pass a
+    CommandId to Ok()/Error()/Event() rather than appending epoch/seq by hand.
+**/
+struct CommandId {
+    uint32_t epoch;
+    uint32_t seq;
+};
+
+/**
  * \brief Response builder with fixed buffer
  *
  * Builds response strings without dynamic allocation.
@@ -50,6 +78,15 @@ public:
     ResponseWriter& Ok();
 
     /**
+     * \brief Start an "ok" response carrying a command id
+     * \param id Command id emitted as epoch/seq directly after "ok"
+     * \return Reference to this for chaining
+     *
+     * Equivalent to Ok().Param("epoch", id.epoch).Param("seq", id.seq).
+     */
+    ResponseWriter& Ok(const CommandId& id);
+
+    /**
      * \brief Start an "error" response
      * \param code Error code
      * \param message Error message
@@ -58,11 +95,46 @@ public:
     ResponseWriter& Error(uint32_t code, const char* message);
 
     /**
+     * \brief Start an "error" response carrying a command id
+     * \param code Error code
+     * \param message Error message
+     * \param id Command id emitted as epoch/seq directly after the message
+     * \return Reference to this for chaining
+     */
+    ResponseWriter& Error(uint32_t code, const char* message, const CommandId& id);
+
+    /**
      * \brief Start an "event" response
      * \param type Event type (e.g., "done", "input", "threshold")
      * \return Reference to this for chaining
      */
     ResponseWriter& Event(const char* type);
+
+    /**
+     * \brief Start an "event" response carrying a command id
+     * \param type Event type (e.g., "done", "input", "threshold")
+     * \param id Command id emitted as epoch/seq directly after the type
+     * \return Reference to this for chaining
+     */
+    ResponseWriter& Event(const char* type, const CommandId& id);
+
+    /**
+     * \brief Start a "status" response (solicited query payload)
+     * \param type Status row type (e.g., "pin", "motor", "summary")
+     * \return Reference to this for chaining
+     *
+     * Distinct from Event: status rows are the body of a query response
+     * (e.g. get_status), not an unsolicited asynchronous notification.
+     */
+    ResponseWriter& Status(const char* type);
+
+    /**
+     * \brief Start a "status" response carrying a command id
+     * \param type Status row type (e.g., "pin", "motor", "summary")
+     * \param id Command id emitted as epoch/seq directly after the type
+     * \return Reference to this for chaining
+     */
+    ResponseWriter& Status(const char* type, const CommandId& id);
 
     /**
      * \brief Start a "debug" response

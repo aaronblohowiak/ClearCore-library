@@ -46,6 +46,17 @@ The protocol accepts input and sends output via USB serial by default. It can be
 
 Commands are sent as single lines terminated by newline (`\n`). Responses are sent immediately after command processing. Asynchronous events (move completion, errors, etc.) are sent when they occur.
 
+**Connection banner.** The controller detects a host connection on the first byte it receives. At that moment, before the first command's response, it emits a one-time `debug` banner identifying itself:
+
+```
+<- debug message="cutter ready" protocol=1 version=1.0.0 device_id=12648430
+```
+
+- `protocol` / `version` match the values returned by the `version` command.
+- `device_id` is the board's factory serial number (the ClearCore NVM serial), stable across reboots and unique per board. Use it to tell one controller from another.
+
+Because the banner is triggered by the first received byte (not by USB enumeration), a client that opens the port and waits silently will not see it until it sends something. Send a `\n` (or any command such as `ping`) immediately after opening the port to elicit the banner.
+
 ---
 
 ## Additional Resources
@@ -113,10 +124,24 @@ ok [param=value ...]
 error code=<error_code> message="<error_message>" [param=value ...]
 ```
 
-**Event (Asynchronous):**
+**Event (Asynchronous, unsolicited):**
 ```
 event type=<event_type> [param=value ...]
 ```
+
+**Status (Solicited query payload):**
+```
+status type=<row_type> [epoch=E seq=S] [param=value ...]
+```
+Status rows are the body of a multi-line query response (currently only `get_status`). They are **not** asynchronous events — they are emitted only in direct reply to a command and carry that command's `epoch`/`seq`. See [get_status](#get_status).
+
+**Debug (Diagnostic):**
+```
+debug message="<text>" [param=value ...]
+```
+Human-oriented diagnostic line carrying no command id (e.g. the [connection banner](#communication)). Clients may log or ignore it.
+
+> **Distinguishing lines:** every line begins with one of five prefixes — `ok`, `error`, `event`, `status`, or `debug`. Dispatch on the first token. A robust client treats any unknown leading token as a `debug`/ignore line so future additions don't break it.
 
 ---
 
@@ -160,6 +185,7 @@ ERROR -> CONNECTED (on reset command)
 | `version` | Get firmware version | `version` |
 | `emergency_stop` | Emergency stop all motors | `emergency_stop` |
 | `get_next_seq` | Get next sequence number | `get_next_seq` |
+| `get_status` | Dump all configured pins and motors | `get_status` |
 
 #### ping
 
@@ -205,6 +231,31 @@ Immediately stop all motors and enter ERROR state.
 -> emergency_stop
 <- ok
 ```
+
+#### get_status
+
+Dump the full configured state: one `status` row per configured pin, one per configured motor, terminated by a `status type=summary` row that carries the counts. The response uses the [status channel](#response-format), not events.
+
+```
+-> get_status seq=7
+<- status type=pin epoch=1 seq=7 pin=0 mode=digital_in value=1 invert=0
+<- status type=motor epoch=1 seq=7 motor=0 motor_type=clearpath enabled=1 moving=0 position=0 homed=1 homing_mode=msp vel_max=10000 accel_max=100000
+<- status type=summary epoch=1 seq=7 pin_count=1 motor_count=1
+```
+
+**Client parsing contract:**
+
+- Read `status` rows carrying the request's `epoch`/`seq` until you receive `status type=summary` with the same id. The summary row **terminates** the response — there is **no trailing `ok`**.
+- With nothing configured, only the summary row is returned: `status type=summary epoch=1 seq=7 pin_count=0 motor_count=0`.
+- Rows carry only the fields relevant to each pin's `mode` / motor configuration; **absent optional fields mean "default / disabled"** (e.g. no `report_edges` means edge reporting is off).
+- The motor row's kind is `motor_type=` (not `type=`), so it does not collide with the line's leading `type=` key. Build your key/value map accordingly.
+- Asynchronous `event` lines (e.g. a `limit` trip) may interleave between status rows; they carry a **different** `epoch`/`seq` (or none). Filter by the request id rather than assuming every line up to the summary belongs to `get_status`.
+
+| Row (`type=`) | Key fields |
+|---------------|-----------|
+| `pin` | `pin`, `mode`, then mode-specific fields (`value`, `invert`, `report_edges`, `duty`, `triggered`, ...) |
+| `motor` | `motor`, `motor_type`, `enabled`, `moving`, `position`, `homed`, `homing_mode`, `vel_max`, `accel_max` (+ optional `soft_limit_min/max`, `velocity_move`, `homing_state`) |
+| `summary` | `pin_count`, `motor_count` |
 
 ---
 
@@ -722,7 +773,7 @@ Generate tones on H-Bridge pins (for buzzers/speakers).
 
 ## Events
 
-Events are sent asynchronously when certain conditions occur.
+Events are sent asynchronously when certain conditions occur. They are distinct from `status` rows: an `event` is unsolicited (it can arrive at any time, including between the rows of a `get_status` response), whereas `status` rows are the solicited payload of a query. Do not treat `get_status` output as events — see [get_status](#get_status).
 
 | Event Type | Description | Parameters |
 |------------|-------------|------------|

@@ -74,6 +74,25 @@ TEST(Response, OkWithStringParam) {
     EXPECT_STREQ(result, "ok state=ready\n");
 }
 
+TEST(Response, OkWithCommandId) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    CommandId id{0, 5};
+    w.Ok(id);
+    const char* result = w.Finish();
+    EXPECT_STREQ(result, "ok epoch=0 seq=5\n");
+}
+
+TEST(Response, OkWithCommandIdAndParams) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    CommandId id{2, 7};
+    w.Ok(id).Param("motor", 0);
+    const char* result = w.Finish();
+    // epoch/seq lead, directly after the verb
+    EXPECT_STREQ(result, "ok epoch=2 seq=7 motor=0\n");
+}
+
 // === Error Response Tests ===
 
 TEST(Response, Error) {
@@ -90,6 +109,15 @@ TEST(Response, ErrorWithParams) {
     w.Error(101, "Invalid parameter").Param("param", "motor");
     const char* result = w.Finish();
     EXPECT_STREQ(result, "error code=101 message=\"Invalid parameter\" param=motor\n");
+}
+
+TEST(Response, ErrorWithCommandId) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    CommandId id{1, 9};
+    w.Error(100, "Unknown command", id);
+    const char* result = w.Finish();
+    EXPECT_STREQ(result, "error code=100 message=\"Unknown command\" epoch=1 seq=9\n");
 }
 
 // === Event Response Tests ===
@@ -133,6 +161,50 @@ TEST(Response, EventError) {
     const char* result = w.Finish();
     // Note: "Motor fault" contains a space so it would be quoted
     EXPECT_STREQ(result, "event type=error code=200 message=\"Motor fault\"\n");
+}
+
+TEST(Response, EventWithCommandId) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    CommandId id{0, 5};
+    w.Event("done", id).Param("motor", 0).Param("position", static_cast<int32_t>(1000));
+    const char* result = w.Finish();
+    // epoch/seq lead, directly after the type
+    EXPECT_STREQ(result, "event type=done epoch=0 seq=5 motor=0 position=1000\n");
+}
+
+// === Status Response Tests ===
+
+TEST(Response, Status) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    w.Status("pin");
+    const char* result = w.Finish();
+    EXPECT_STREQ(result, "status type=pin\n");
+}
+
+TEST(Response, StatusWithCommandId) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    CommandId id{1, 7};
+    w.Status("motor", id)
+        .Param("motor", 0)
+        .Param("motor_type", "clearpath")
+        .Param("enabled", true);
+    const char* result = w.Finish();
+    // epoch/seq lead, directly after the type; motor_type avoids colliding with type
+    EXPECT_STREQ(result, "status type=motor epoch=1 seq=7 motor=0 motor_type=clearpath enabled=1\n");
+}
+
+TEST(Response, StatusSummary) {
+    char buffer[256];
+    ResponseWriter w(buffer, sizeof(buffer));
+    CommandId id{1, 7};
+    w.Status("summary", id)
+        .Param("pin_count", static_cast<int32_t>(0))
+        .Param("motor_count", static_cast<int32_t>(0));
+    const char* result = w.Finish();
+    EXPECT_STREQ(result, "status type=summary epoch=1 seq=7 pin_count=0 motor_count=0\n");
 }
 
 // === Debug Response Tests ===

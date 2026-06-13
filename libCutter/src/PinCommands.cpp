@@ -13,9 +13,7 @@ static void SendError(Controller* ctrl, const ParsedCommand& cmd,
                       ErrorCode code, const char* message) {
     (void)cmd;  // User-supplied params not used; we use internal command ID
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Error(static_cast<uint32_t>(code), message);
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Error(static_cast<uint32_t>(code), message, id);
     ctrl->SendResponse();
 }
 
@@ -100,9 +98,7 @@ static void CmdConfigureDigitalIn(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::InputFallen(static_cast<uint8_t>(pin));
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -138,9 +134,7 @@ static void CmdConfigureDigitalOut(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::WriteDigitalPin(slot->pin_index, slot->digital_out.current_value);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -182,9 +176,7 @@ static void CmdConfigureAnalogIn(Controller* ctrl, const ParsedCommand& cmd) {
     slot->analog_in.last_report_time = CutterHal::Milliseconds();
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -214,9 +206,7 @@ static void CmdConfigurePwm(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetPwmDuty(slot->pin_index, slot->pwm.duty);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -249,9 +239,7 @@ static void CmdConfigureHBridge(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetHBridgeValue(slot->pin_index, slot->hbridge.value);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -280,9 +268,7 @@ static void CmdConfigureEndstop(Controller* ctrl, const ParsedCommand& cmd) {
     slot->end_stop.last_value = CutterHal::ReadDigitalPin(slot->pin_index);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -303,9 +289,7 @@ static void CmdReadPin(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
 
     switch (slot->mode) {
@@ -373,9 +357,7 @@ static void CmdWritePin(Controller* ctrl, const ParsedCommand& cmd) {
         slot->digital_out.raise_start_time = 0;
     }
 
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin).Param("value", value);
     ctrl->SendResponse();
 }
@@ -400,9 +382,7 @@ static void CmdSetPwm(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -430,9 +410,7 @@ static void CmdSetHBridge(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::SetHBridgeValue(slot->pin_index, slot->hbridge.value);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -466,9 +444,7 @@ static void CmdStartTone(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::StartTone(slot->pin_index, slot->hbridge.tone_freq, slot->hbridge.tone_amplitude);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
@@ -490,9 +466,7 @@ static void CmdStopTone(Controller* ctrl, const ParsedCommand& cmd) {
     CutterHal::StopTone(slot->pin_index);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
-    ctrl->Response().Ok();
-    ctrl->Response().Param("epoch", id.epoch);
-    ctrl->Response().Param("seq", id.seq);
+    ctrl->Response().Ok(id);
     ctrl->Response().Param("pin", pin);
     ctrl->SendResponse();
 }
