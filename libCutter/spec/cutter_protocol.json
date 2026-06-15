@@ -259,6 +259,20 @@
       "emits_events": ["soft_limit", "alert", "limit"]
     },
 
+    "move_until": {
+      "description": "Velocity move until a non-limit sensor input reaches a target level, then stop and report position. Not a fault: no alert latched. Soft limits bound the travel; requires soft_limits enabled on the motor and until_pin configured as a digital input.",
+      "valid_states": ["READY", "WORKING"],
+      "params": {
+        "motor": { "type": "motor_index", "required": true },
+        "velocity": { "type": "int32", "required": true },
+        "until_pin": { "type": "pin_index", "required": true },
+        "until_value": { "type": "bool", "required": true },
+        "accel": { "type": "int32", "min": 1, "required": false }
+      },
+      "response_params": ["motor"],
+      "emits_events": ["sensor_stop", "soft_limit", "alert", "limit"]
+    },
+
     "stop": {
       "description": "Stop motor",
       "valid_states": ["*"],
@@ -506,6 +520,16 @@
       "description": "Velocity move hit soft limit",
       "params": {
         "motor": { "type": "motor_index" },
+        "position": { "type": "int32" },
+        "epoch": { "type": "uint32", "optional": true },
+        "seq": { "type": "uint32" }
+      }
+    },
+    "sensor_stop": {
+      "description": "move_until sensor reached its target level and the move stopped successfully. Not a fault: no alert latched.",
+      "params": {
+        "motor": { "type": "motor_index" },
+        "pin": { "type": "pin_index" },
         "position": { "type": "int32" },
         "epoch": { "type": "uint32", "optional": true },
         "seq": { "type": "uint32" }

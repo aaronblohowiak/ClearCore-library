@@ -28,6 +28,7 @@ TEST_SRCS = \
 	test/test_pins.cpp \
 	test/test_motors.cpp \
 	test/test_homing.cpp \
+	test/test_move_until.cpp \
 	test/test_errors.cpp \
 	test/test_integration.cpp
 

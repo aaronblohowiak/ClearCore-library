@@ -266,6 +266,12 @@ struct MotorSlot {
     bool last_pos_limit;            ///< Last seen positive limit input state
     bool last_neg_limit;            ///< Last seen negative limit input state
 
+    // move_until: stop a velocity move when a (non-limit) sensor input trips.
+    // Not a fault: no alert is latched. The motor's soft limits act as the
+    // travel bound. PIN_INVALID = no sensor stop condition active.
+    uint8_t stop_sensor_pin;        ///< Pin to watch (PIN_INVALID = none)
+    bool stop_sensor_value;         ///< Logical level (post-invert) that stops the move
+
     // Homing parameters (used when homing_mode=LIMIT_SWITCH for both motor types)
     int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
     int32_t homing_seek_velocity;   ///< Fast approach velocity (steps/sec, always positive)

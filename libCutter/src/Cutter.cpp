@@ -222,6 +222,7 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         strcmp(cmd.name, "disable") == 0 ||
         strcmp(cmd.name, "move") == 0 ||
         strcmp(cmd.name, "move_velocity") == 0 ||
+        strcmp(cmd.name, "move_until") == 0 ||
         strcmp(cmd.name, "stop") == 0 ||
         strcmp(cmd.name, "home") == 0 ||
         strcmp(cmd.name, "set_position") == 0 ||
@@ -423,6 +424,7 @@ void Controller::CheckMotors() {
                 if (m_motors[j].type != MotorType::UNCONFIGURED) {
                     CutterHal::StopMotor(m_motors[j].motor_index, true);
                     m_motors[j].moving = false;
+                    m_motors[j].stop_sensor_pin = CutterHal::PIN_INVALID;
                 }
             }
             return;
@@ -527,6 +529,7 @@ void Controller::CheckMotors() {
         // canceled and it is now latched in alert until clear_alerts.
         if (motor.moving && CutterHal::HasMotionCanceledEStop(motor.motor_index)) {
             motor.moving = false;
+            motor.stop_sensor_pin = CutterHal::PIN_INVALID;
             m_response.Event("alert", motor.move_id)
                 .Param("motor", static_cast<int32_t>(motor.motor_index))
                 .Param("cause", "estop")
@@ -566,6 +569,7 @@ void Controller::CheckMotors() {
             bool pos_limit = CutterHal::HasMotionCanceledPosLimit(motor.motor_index);
             if (neg_limit || pos_limit) {
                 motor.moving = false;
+                motor.stop_sensor_pin = CutterHal::PIN_INVALID;
                 m_response.Event("alert", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("cause", neg_limit ? "neg_limit" : "pos_limit")
@@ -587,6 +591,45 @@ void Controller::CheckMotors() {
             }
         }
 
+        // Check the move_until sensor stop condition. When a non-limit sensor
+        // (e.g. a vacuum switch) reaches its target logical level, stop the
+        // velocity move and report the position. This is a successful
+        // completion, NOT a fault: no alert is latched, so no clear_alerts is
+        // needed afterward. The soft-limit check below remains active as the
+        // travel bound for the "sensor never tripped" outcome. Checked before
+        // the soft limit so a sensor trip at the boundary reports sensor_stop.
+        if (motor.moving && motor.stop_sensor_pin != CutterHal::PIN_INVALID) {
+            // CheckPins() ran earlier this Update(), but read fresh and apply
+            // the configured inversion to match its logical-level semantics.
+            bool raw = CutterHal::ReadDigitalPin(motor.stop_sensor_pin);
+            PinSlot* sensor = GetPin(motor.stop_sensor_pin);
+            bool logical = sensor->digital_in.invert ? !raw : raw;
+            if (logical == motor.stop_sensor_value) {
+                CutterHal::StopMotor(motor.motor_index, true);
+                motor.moving = false;
+                uint8_t sensor_pin = motor.stop_sensor_pin;
+                motor.stop_sensor_pin = CutterHal::PIN_INVALID;
+                m_response.Event("sensor_stop", motor.move_id)
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("pin", static_cast<int32_t>(sensor_pin))
+                    .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
+                SendResponse();
+
+                // Transition back to READY if no other motors moving
+                bool any_moving = false;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].moving) {
+                        any_moving = true;
+                        break;
+                    }
+                }
+                if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                    m_stateMachine.TransitionTo(State::READY);
+                }
+                continue;  // Skip the remaining checks for this motor
+            }
+        }
+
         // Check soft limits for velocity moves. Skip during an active homing
         // sequence: the position counter is not yet referenced (zero is only set
         // when homing completes) and homing deliberately drives into the limit,
@@ -604,6 +647,7 @@ void Controller::CheckMotors() {
             if (at_limit) {
                 CutterHal::StopMotor(motor.motor_index, true);
                 motor.moving = false;
+                motor.stop_sensor_pin = CutterHal::PIN_INVALID;
                 m_response.Event("soft_limit", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("position", pos);
@@ -637,6 +681,7 @@ void Controller::CheckMotors() {
 
             if (move_complete) {
                 motor.moving = false;
+                motor.stop_sensor_pin = CutterHal::PIN_INVALID;
                 m_response.Event("done", motor.move_id)
                     .Param("motor", static_cast<int32_t>(motor.motor_index))
                     .Param("position", CutterHal::GetMotorPosition(motor.motor_index));
@@ -870,6 +915,7 @@ void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
             CutterHal::StopMotor(m_motors[i].motor_index, true);  // immediate stop
             m_motors[i].moving = false;
             m_motors[i].homing_state = HomingState::IDLE;
+            m_motors[i].stop_sensor_pin = CutterHal::PIN_INVALID;
         }
     }
 

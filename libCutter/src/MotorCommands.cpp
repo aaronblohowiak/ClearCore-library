@@ -169,6 +169,9 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     slot->last_pos_limit = CutterHal::InPosLimit(slot->motor_index);
     slot->last_neg_limit = CutterHal::InNegLimit(slot->motor_index);
 
+    // No move_until sensor stop condition is active until a move_until command.
+    slot->stop_sensor_pin = CutterHal::PIN_INVALID;
+
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
@@ -318,6 +321,9 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     slot->last_pos_limit = CutterHal::InPosLimit(slot->motor_index);
     slot->last_neg_limit = CutterHal::InNegLimit(slot->motor_index);
 
+    // No move_until sensor stop condition is active until a move_until command.
+    slot->stop_sensor_pin = CutterHal::PIN_INVALID;
+
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
@@ -400,6 +406,7 @@ static void CmdDisable(Controller* ctrl, const ParsedCommand& cmd) {
 
     slot->enabled = false;
     slot->moving = false;
+    slot->stop_sensor_pin = CutterHal::PIN_INVALID;  // cancel any move_until condition
     CutterHal::EnableMotor(slot->motor_index, false);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
@@ -496,6 +503,7 @@ static void CmdMove(Controller* ctrl, const ParsedCommand& cmd) {
     slot->moving = true;
     slot->velocity_move = false;
     slot->move_id = id;
+    slot->stop_sensor_pin = CutterHal::PIN_INVALID;  // not a move_until
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -564,6 +572,107 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
     slot->moving = true;
     slot->velocity_move = true;
     slot->move_id = id;
+    slot->stop_sensor_pin = CutterHal::PIN_INVALID;  // not a move_until
+
+    // Transition to WORKING
+    if (ctrl->GetState() == State::READY) {
+        ctrl->GetStateMachine().TransitionTo(State::WORKING);
+    }
+
+    ctrl->Response().Ok(id);
+    ctrl->Response().Param("motor", motor);
+    ctrl->SendResponse();
+}
+
+// move_until: run a velocity move until a (non-limit) sensor input reaches a
+// target logical level, then stop and report position. Unlike a limit switch
+// this is not a fault - no alert is latched and no clear_alerts is needed. The
+// motor's configured soft limits act as the travel bound: if the sensor never
+// trips, the existing velocity soft-limit monitor stops the move and emits a
+// "soft_limit" event (the "no item found" outcome). Used to lower a suction
+// head until the vacuum sensor reports suction has formed.
+static void CmdMoveUntil(Controller* ctrl, const ParsedCommand& cmd) {
+    if (!RequireReady(ctrl, cmd)) return;
+
+    int32_t motor;
+    if (!cmd.GetInt("motor", &motor) || motor < 0 || motor >= static_cast<int32_t>(NUM_MOTORS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_MOTOR, "Invalid motor");
+        return;
+    }
+
+    MotorSlot* slot = ctrl->GetMotor(static_cast<uint8_t>(motor));
+    if (slot->type == MotorType::UNCONFIGURED || !slot->enabled) {
+        SendError(ctrl, cmd, ErrorCode::MOTOR_NOT_READY, "Motor not enabled");
+        return;
+    }
+
+    int32_t velocity;
+    if (!cmd.GetInt("velocity", &velocity)) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing velocity parameter");
+        return;
+    }
+
+    // Validate velocity magnitude against motor max
+    int32_t vel_magnitude = velocity < 0 ? -velocity : velocity;
+    if (vel_magnitude > slot->vel_max) {
+        SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "velocity exceeds motor vel_max");
+        return;
+    }
+
+    // The sensor pin to watch and the logical level (post-invert) that stops us.
+    int32_t until_pin;
+    int32_t until_value;
+    if (!cmd.GetInt("until_pin", &until_pin) || !cmd.GetInt("until_value", &until_value)) {
+        SendError(ctrl, cmd, ErrorCode::MISSING_PARAM, "Missing until_pin or until_value parameter");
+        return;
+    }
+    if (until_pin < 0 || until_pin >= static_cast<int32_t>(NUM_PINS)) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PIN, "Invalid until_pin");
+        return;
+    }
+    PinSlot* sensor = ctrl->GetPin(static_cast<uint8_t>(until_pin));
+    if (sensor->mode != PinMode::DIGITAL_IN) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM,
+                  "until_pin must be configured as a digital input");
+        return;
+    }
+
+    // Soft limits are the travel bound for this move. Without them an absent
+    // item would let the head drive indefinitely, so require them.
+    if (!slot->soft_limits_enabled) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM,
+                  "move_until requires soft limits configured as the travel bound");
+        return;
+    }
+
+    // Optional acceleration override (must be <= motor max)
+    int32_t accel = cmd.GetIntOr("accel", slot->accel_max);
+    if (accel > slot->accel_max) {
+        SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "accel exceeds motor accel_max");
+        return;
+    }
+
+    // Apply per-move acceleration
+    CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, accel);
+
+    const CommandId& id = ctrl->GetCurrentCommandId();
+    bool accepted = CutterHal::MoveVelocity(slot->motor_index, velocity);
+
+    // Restore motor defaults
+    CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
+
+    if (!accepted) {
+        slot->moving = false;
+        SendError(ctrl, cmd, ErrorCode::MOVE_REJECTED,
+                  "Move rejected: clear alerts and move away from the limit");
+        return;
+    }
+
+    slot->moving = true;
+    slot->velocity_move = true;   // reuse the velocity soft-limit monitor as the bound
+    slot->move_id = id;
+    slot->stop_sensor_pin = static_cast<uint8_t>(until_pin);
+    slot->stop_sensor_value = (until_value != 0);
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -591,6 +700,7 @@ static void CmdStop(Controller* ctrl, const ParsedCommand& cmd) {
     bool immediate = cmd.GetBoolOr("immediate", false);
     CutterHal::StopMotor(slot->motor_index, immediate);
     slot->moving = false;
+    slot->stop_sensor_pin = CutterHal::PIN_INVALID;  // cancel any move_until condition
 
     const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok(id);
@@ -996,6 +1106,8 @@ void DispatchMotorCommand(Controller* ctrl, const ParsedCommand& cmd) {
         CmdMove(ctrl, cmd);
     } else if (strcmp(cmd.name, "move_velocity") == 0) {
         CmdMoveVelocity(ctrl, cmd);
+    } else if (strcmp(cmd.name, "move_until") == 0) {
+        CmdMoveUntil(ctrl, cmd);
     } else if (strcmp(cmd.name, "stop") == 0) {
         CmdStop(ctrl, cmd);
     } else if (strcmp(cmd.name, "home") == 0) {

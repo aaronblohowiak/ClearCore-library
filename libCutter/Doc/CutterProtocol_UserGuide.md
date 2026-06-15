@@ -401,6 +401,7 @@ it with `clear_alerts` before further motion.
 | `disable` | Disable motor | `motor` |
 | `move` | Command positional move | `motor`, `steps` or `position` |
 | `move_velocity` | Command velocity move | `motor`, `velocity` |
+| `move_until` | Velocity move until a sensor input trips | `motor`, `velocity`, `until_pin`, `until_value` |
 | `stop` | Stop motor | `motor` |
 | `home` | Start homing sequence | `motor` |
 | `set_position` | Set position counter | `motor`, `position` |
@@ -510,6 +511,50 @@ and both a `limit` and an `alert` event are emitted (same as for `move`):
 <- event type=limit motor=0 direction=pos value=1 position=20000 seq=1
 <- event type=alert motor=0 cause=pos_limit position=20000 seq=1
 ```
+
+#### move_until
+
+Run a velocity move until a **non-limit sensor** input reaches a target level,
+then stop and report the position. Use this to lower a suction head until a
+vacuum sensor reports suction has formed, or to feed material until a part
+sensor sees it. Unlike a limit switch, the sensor trip is **not a fault**: no
+alert is latched and no `clear_alerts` is needed afterward.
+
+The motor's configured **soft limits are the travel bound**. If the sensor
+never trips (e.g. no item is present), the move stops at the soft limit and
+emits the usual `soft_limit` event - that is the "not found" outcome. The
+command therefore requires `soft_limits` to be enabled on the motor.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `motor` | int | required | Motor index (0-3) |
+| `velocity` | int | required | Target velocity (signed, steps/sec) - sign sets direction |
+| `until_pin` | int | required | Pin to watch; must be configured as a digital input |
+| `until_value` | int (0/1) | required | Logical level (after the pin's `invert`) that stops the move |
+| `accel` | int | motor accel_max | Acceleration to target velocity |
+
+Prerequisites: `until_pin` configured with `configure_digital_in`, and the
+motor configured with `soft_limits=1`. The trip is **level-based**: if the
+sensor already reads `until_value` when the command is issued, the motor stops
+immediately on the next update (it will not drive into an already-formed
+vacuum).
+
+Two terminal outcomes, both carrying the final `position`:
+
+```
+# Vacuum forms: sensor on pin 6 reaches the target level
+-> move_until motor=0 velocity=-2000 until_pin=6 until_value=1 seq=1
+<- ok seq=1 motor=0
+<- event type=sensor_stop motor=0 pin=6 position=-1840 seq=1
+
+# No item found: head bottoms out at the soft limit instead
+-> move_until motor=0 velocity=-2000 until_pin=6 until_value=1 seq=2
+<- ok seq=2 motor=0
+<- event type=soft_limit motor=0 position=-3000 seq=2
+```
+
+A hardware E-Stop or limit switch during a `move_until` still cancels it with an
+`alert` event, exactly as for any other move.
 
 #### stop
 
@@ -787,6 +832,7 @@ Events are sent asynchronously when certain conditions occur. They are distinct 
 | `done` | Motor move completed | `motor`, `position`, [`epoch`], `seq` |
 | `homed` | Motor homing completed | `motor`, [`epoch`], `seq` |
 | `soft_limit` | Velocity move hit soft limit | `motor`, `position`, [`epoch`], `seq` |
+| `sensor_stop` | `move_until` sensor reached its target level (not a fault) | `motor`, `pin`, `position`, [`epoch`], `seq` |
 | `alert` | Motor put into alert state, motion canceled (latched until `clear_alerts`) | `motor`, `cause`, `position`, [`epoch`], `seq` |
 | `limit` | Limit switch input changed state | `motor`, `direction`, `value`, `position`, [`epoch`], `seq` |
 | `edge` | Digital input edge detected | `pin`, `direction` |
