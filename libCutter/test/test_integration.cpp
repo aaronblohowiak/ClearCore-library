@@ -62,8 +62,23 @@ TEST_F(IntegrationTest, ConnectionBannerPrecedesFirstResponse) {
     // The banner precedes the first command's response.
     auto lines = serial.GetOutputLines();
     ASSERT_GE(lines.size(), 2u);
-    EXPECT_EQ(lines[0], "debug message=\"cutter ready\" protocol=1 version=1.0.0 device_id=12648430");
+    // Starts-with (not exact): every line now also carries a trailing t_ms stamp.
+    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=1 version=1.0.0 device_id=12648430", 0), 0u);
     EXPECT_EQ(lines[1].rfind("ok", 0), 0u);  // command response follows
+}
+
+TEST_F(IntegrationTest, ResponsesCarryMonotonicTimestamp) {
+    // Every emitted line carries the controller's uptime as t_ms.
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("t_ms=0"));  // banner + ok both stamped at boot
+    serial.ClearOutput();
+
+    // The stamp reflects the controller clock at send time.
+    ADVANCE_TIME(500);
+    serial.SendLine("ping");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("t_ms=500"));
 }
 
 TEST_F(IntegrationTest, ConnectionBannerFallsBackToFirstByteWithoutDtr) {

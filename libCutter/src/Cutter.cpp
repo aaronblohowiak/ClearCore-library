@@ -771,6 +771,11 @@ void Controller::SendEvent(const char* type) {
 }
 
 void Controller::SendResponse() {
+    // Stamp every emitted line with the controller's monotonic uptime (ms since
+    // boot). Appended last so it never disturbs the position of the verb or the
+    // epoch/seq correlation fields; additive key=value, so host parsers that
+    // don't care can ignore it. This is the single chokepoint for all output.
+    m_response.Param("t_ms", CutterHal::Milliseconds());
     const char* resp = m_response.Finish();
     m_serial->Send(resp);
     m_response.Reset();

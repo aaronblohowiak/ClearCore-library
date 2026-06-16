@@ -656,6 +656,13 @@
     }
   },
 
+  "common_response_fields": {
+    "t_ms": {
+      "type": "uint32",
+      "description": "Controller monotonic uptime in milliseconds since boot, stamped at send time. Appended (last field) to EVERY emitted line - ok, error, event, status, and debug (including the banner). Not wall-clock; resets to 0 on reboot/reset. Additive; clients may ignore it."
+    }
+  },
+
   "connection_banner": {
     "_comment": "A single 'debug' line emitted once when a host first connects (on the first byte received), before the first command's response.",
     "format": "debug message=\"cutter ready\" protocol=<protocol_version> version=<firmware_version> device_id=<uint32>",

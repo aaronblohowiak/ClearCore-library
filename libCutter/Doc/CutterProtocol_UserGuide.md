@@ -143,6 +143,20 @@ Human-oriented diagnostic line carrying no command id (e.g. the [connection bann
 
 > **Distinguishing lines:** every line begins with one of five prefixes — `ok`, `error`, `event`, `status`, or `debug`. Dispatch on the first token. A robust client treats any unknown leading token as a `debug`/ignore line so future additions don't break it.
 
+**Timestamp (`t_ms`):** every emitted line — `ok`, `error`, `event`, `status`, and
+`debug` (including the banner) — carries a trailing `t_ms=<n>` field giving the
+controller's monotonic uptime in **milliseconds since boot** at the moment the line
+was sent. It is **not** wall-clock time and resets to 0 on reboot/reset. Use it to
+measure on-controller timing and latency (e.g. command-to-`done` duration) and to
+order lines as the controller produced them. It is appended last and is purely
+additive — clients that don't need it can ignore it.
+
+```
+-> move motor=0 steps=1000 seq=1
+<- ok epoch=0 seq=5 motor=0 t_ms=12345
+<- event type=done epoch=0 seq=5 motor=0 position=1000 t_ms=12678
+```
+
 ---
 
 ## State Machine
