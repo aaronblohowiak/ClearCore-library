@@ -525,6 +525,20 @@ private:
     bool m_wasPortOpen;             ///< Last observed serial port-open state (for edge detection)
     bool m_bannerSent;              ///< True once the connection banner was sent (re-armed on port close)
 
+    // debug_wait state (DEBUG-ONLY blocking-wait mode; see CmdDebugWait).
+    // While active, Update() suspends ProcessInput() until the target move
+    // completes (or times out), so a pasted script steps through one move at a
+    // time. CheckPins/CheckMotors keep running, so the hardware E-stop input and
+    // limit switches still abort. Serial stop/emergency_stop are deferred.
+    bool m_debugWaitActive;         ///< True while a debug_wait is pending
+    uint8_t m_debugWaitMotor;       ///< Motor to wait on (0xFF = wait for all idle)
+    uint32_t m_debugWaitStart;      ///< Milliseconds() when the wait began
+    uint32_t m_debugWaitTimeoutMs;  ///< Safety cap so the wait can never wedge forever
+    CommandId m_debugWaitId;        ///< Command id for the deferred ok/error response
+
+    /// True if any configured motor is currently moving (debug_wait predicate)
+    bool AnyMotorMoving() const;
+
     // Built-in commands
     void CmdPing(const ParsedCommand& cmd);
     void CmdReset(const ParsedCommand& cmd);
@@ -533,6 +547,7 @@ private:
     void CmdEmergencyStop(const ParsedCommand& cmd);
     void CmdGetNextSeq(const ParsedCommand& cmd);
     void CmdGetStatus(const ParsedCommand& cmd);
+    void CmdDebugWait(const ParsedCommand& cmd);
 };
 
 }  // namespace Cutter

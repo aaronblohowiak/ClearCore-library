@@ -29,6 +29,7 @@ TEST_SRCS = \
 	test/test_motors.cpp \
 	test/test_homing.cpp \
 	test/test_move_until.cpp \
+	test/test_debug_wait.cpp \
 	test/test_errors.cpp \
 	test/test_integration.cpp
 

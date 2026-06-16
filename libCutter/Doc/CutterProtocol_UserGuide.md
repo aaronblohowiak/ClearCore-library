@@ -403,6 +403,7 @@ it with `clear_alerts` before further motion.
 | `move_velocity` | Command velocity move | `motor`, `velocity` |
 | `move_until` | Velocity move until a sensor input trips | `motor`, `velocity`, `until_pin`, `until_value` |
 | `stop` | Stop motor | `motor` |
+| `debug_wait` | **Debug-only** blocking wait for a move to finish | none |
 | `home` | Start homing sequence | `motor` |
 | `set_position` | Set position counter | `motor`, `position` |
 | `clear_alerts` | Clear motor alerts | `motor` |
@@ -572,6 +573,49 @@ Stop a motor.
 -> stop motor=0 immediate=true
 <- ok motor=0 position=1234
 ```
+
+#### debug_wait
+
+> **⚠️ DEBUG-ONLY. Do not use in production host code.** This command
+> deliberately *blocks the controller's command loop*. It exists only to make
+> manual debugging convenient — pasting a script into a dumb serial terminal and
+> having it step through one move at a time. Production hosts should instead
+> sequence on the asynchronous `done` / `sensor_stop` / `homed` events (which
+> carry the matching `seq`), keeping the controller fully interruptible.
+
+Wait for a motor's current move to finish before the next command is processed.
+While waiting, the controller **suspends serial input** — including `stop` and
+`emergency_stop` — until the move completes. The `ok` response is **deferred**
+until then (unlike every other command, which acks immediately).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `motor` | int | (all) | Motor to wait on; if omitted, wait until **no** motor is moving |
+| `timeout_ms` | int | 30000 | Safety cap; on expiry the wait gives up with an error |
+
+What still works while waiting (so a runaway can always be stopped):
+- The **hardware E-stop input** and **limit switches** are polled every tick and
+  abort the move (which then ends the wait).
+- The **timeout** guarantees the wait can never wedge the controller — e.g. an
+  SDSK whose HLFB never asserts.
+
+If the target isn't moving when issued, it returns `ok` immediately.
+
+```
+-> move motor=0 steps=1000 seq=1
+<- ok seq=1 motor=0
+-> debug_wait motor=0 seq=2
+<- event type=done motor=0 seq=1 position=1000   # emitted while waiting
+<- ok seq=2 motor=0 position=1000                # deferred until the move finished
+```
+
+On timeout the motor is left as-is (still moving):
+```
+<- error code=308 message="debug_wait timed out" seq=2 motor=0
+```
+
+**Caveat:** pasting a very long script while a slow move is in flight can overflow
+the serial RX buffer (the deferred lines wait there until the move completes).
 
 #### home
 
@@ -919,6 +963,7 @@ which consumes the alert itself), only the `limit` event fires.
 | 305 | SOFT_LIMIT | Move exceeds soft limits |
 | 306 | EXCEEDS_LIMIT | Per-move vel/accel exceeds motor max |
 | 307 | MOVE_REJECTED | Hardware rejected the move (alert present or at active limit) |
+| 308 | DEBUG_WAIT_TIMEOUT | Debug-only `debug_wait` exceeded its timeout |
 
 ### System Errors (400-499)
 

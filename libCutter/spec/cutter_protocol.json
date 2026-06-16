@@ -63,6 +63,7 @@
     "305": { "name": "SOFT_LIMIT", "description": "Move exceeds soft limits" },
     "306": { "name": "EXCEEDS_LIMIT", "description": "Per-move vel/accel exceeds motor max" },
     "307": { "name": "MOVE_REJECTED", "description": "Hardware rejected the move (alert present or at active limit); clear alerts and move away from the limit" },
+    "308": { "name": "DEBUG_WAIT_TIMEOUT", "description": "Debug-only debug_wait exceeded its timeout" },
     "400": { "name": "INTERNAL_ERROR", "description": "Internal firmware error" },
     "401": { "name": "EMERGENCY_STOP", "description": "Emergency stop activated" }
   },
@@ -281,6 +282,18 @@
         "immediate": { "type": "bool", "required": false, "default": false }
       },
       "response_params": ["motor", "position"]
+    },
+
+    "debug_wait": {
+      "description": "DEBUG-ONLY. Block processing of further serial commands (including stop/emergency_stop) until the target motor's move completes or timeout_ms elapses, so a script pasted into a dumb terminal steps through one move at a time. The ok response is deferred until the wait resolves. The hardware E-stop input and limit switches still abort. Production hosts should sequence on the 'done'/'sensor_stop'/'homed' events instead.",
+      "debug_only": true,
+      "valid_states": ["READY", "WORKING"],
+      "params": {
+        "motor": { "type": "motor_index", "required": false },
+        "timeout_ms": { "type": "int32", "required": false, "default": 30000 }
+      },
+      "response_params": ["motor", "position"],
+      "deferred_response": true
     },
 
     "home": {

@@ -25,6 +25,11 @@ Controller::Controller(ISerial* serial)
     , m_currentHomingIndex(0)
     , m_wasPortOpen(false)
     , m_bannerSent(false)
+    , m_debugWaitActive(false)
+    , m_debugWaitMotor(0xFF)
+    , m_debugWaitStart(0)
+    , m_debugWaitTimeoutMs(0)
+    , m_debugWaitId{}
 {
     // Initialize input buffer
     m_inputBuffer[0] = '\0';
@@ -58,16 +63,45 @@ void Controller::Update() {
     }
     m_wasPortOpen = portOpen;
 
-    // Process incoming serial data
-    ProcessInput();
+    // Resolve a pending debug_wait (DEBUG-ONLY). While active, new serial input
+    // is NOT processed - the move in flight runs to completion first - so a
+    // pasted script steps through one move at a time. CheckMotors (below) still
+    // runs every tick, so the previous tick may already have cleared `moving`
+    // (and emitted the move's done/alert) by the time we get here.
+    if (m_debugWaitActive) {
+        bool moving = (m_debugWaitMotor == 0xFF)
+                          ? AnyMotorMoving()
+                          : m_motors[m_debugWaitMotor].moving;
+        if (!moving) {
+            m_debugWaitActive = false;
+            m_response.Ok(m_debugWaitId);
+            if (m_debugWaitMotor != 0xFF) {
+                m_response.Param("motor", static_cast<int32_t>(m_debugWaitMotor));
+                m_response.Param("position",
+                                 CutterHal::GetMotorPosition(m_debugWaitMotor));
+            }
+            SendResponse();
+        } else if ((now - m_debugWaitStart) > m_debugWaitTimeoutMs) {
+            m_debugWaitActive = false;
+            m_response.Error(static_cast<uint32_t>(ErrorCode::DEBUG_WAIT_TIMEOUT),
+                             "debug_wait timed out", m_debugWaitId);
+            if (m_debugWaitMotor != 0xFF) {
+                m_response.Param("motor", static_cast<int32_t>(m_debugWaitMotor));
+            }
+            SendResponse();
+        }
+    }
+
+    // Process incoming serial data (gated while a debug_wait is pending)
+    if (!m_debugWaitActive) {
+        ProcessInput();
+    }
 
     // Check pin states and generate events
     CheckPins();
 
     // Check motor states and generate events
     CheckMotors();
-
-    (void)now;  // Will be used in CheckPins/CheckMotors
 }
 
 void Controller::ProcessInput() {
@@ -104,6 +138,13 @@ void Controller::ProcessInput() {
                 // Empty/comment lines are silently ignored
 
                 m_inputPos = 0;
+
+                // If the just-dispatched command armed a debug_wait, stop
+                // draining: any remaining pasted lines must wait in the RX
+                // buffer until the move completes (see Update()).
+                if (m_debugWaitActive) {
+                    break;
+                }
             }
         } else if (m_inputPos < sizeof(m_inputBuffer) - 1) {
             m_inputBuffer[m_inputPos++] = static_cast<char>(c);
@@ -172,6 +213,10 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
     }
     if (strcmp(cmd.name, "emergency_stop") == 0) {
         CmdEmergencyStop(cmd);
+        return;
+    }
+    if (strcmp(cmd.name, "debug_wait") == 0) {
+        CmdDebugWait(cmd);
         return;
     }
     if (strcmp(cmd.name, "get_next_seq") == 0) {
@@ -932,6 +977,62 @@ void Controller::CmdEmergencyStop(const ParsedCommand& cmd) {
         .Param("code", static_cast<uint32_t>(ErrorCode::EMERGENCY_STOP))
         .Param("message", "Emergency stop activated");
     SendResponse();
+}
+
+bool Controller::AnyMotorMoving() const {
+    for (size_t i = 0; i < NUM_MOTORS; i++) {
+        if (m_motors[i].moving) return true;
+    }
+    return false;
+}
+
+// DEBUG-ONLY. Block processing of further serial commands until the target
+// motor's move completes (or a timeout elapses), so a script pasted into a dumb
+// terminal steps through one move at a time. This deliberately suspends the
+// serial stop/emergency_stop path while waiting - the hardware E-stop input and
+// limit switches still abort (CheckMotors keeps running), and the timeout bounds
+// the wait. Not for production host code; the host should sequence on the
+// move's "done"/"sensor_stop" events instead. See Update() for the resolution.
+void Controller::CmdDebugWait(const ParsedCommand& cmd) {
+    State s = m_stateMachine.GetState();
+    if (s != State::READY && s != State::WORKING) {
+        m_response.Error(static_cast<uint32_t>(ErrorCode::INVALID_STATE),
+                         "Not in ready state", m_currentCommandId);
+        SendResponse();
+        return;
+    }
+
+    // Optional motor: absent means "wait until no motor is moving".
+    int32_t motor;
+    bool has_motor = cmd.GetInt("motor", &motor);
+    if (has_motor && (motor < 0 || motor >= static_cast<int32_t>(NUM_MOTORS))) {
+        m_response.Error(static_cast<uint32_t>(ErrorCode::INVALID_MOTOR),
+                         "Invalid motor", m_currentCommandId);
+        SendResponse();
+        return;
+    }
+
+    uint8_t target = has_motor ? static_cast<uint8_t>(motor) : 0xFF;
+    bool moving = (target == 0xFF) ? AnyMotorMoving() : m_motors[target].moving;
+
+    // Already idle: nothing to wait for, ack immediately (no wait mode entered).
+    if (!moving) {
+        m_response.Ok(m_currentCommandId);
+        if (target != 0xFF) {
+            m_response.Param("motor", static_cast<int32_t>(target));
+            m_response.Param("position", CutterHal::GetMotorPosition(target));
+        }
+        SendResponse();
+        return;
+    }
+
+    // Enter wait mode. The ok/error is deferred to Update() when the wait ends.
+    m_debugWaitMotor = target;
+    m_debugWaitTimeoutMs =
+        static_cast<uint32_t>(cmd.GetIntOr("timeout_ms", 30000));
+    m_debugWaitStart = CutterHal::Milliseconds();
+    m_debugWaitId = m_currentCommandId;
+    m_debugWaitActive = true;
 }
 
 void Controller::CmdGetNextSeq(const ParsedCommand& cmd) {

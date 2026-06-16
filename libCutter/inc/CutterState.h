@@ -70,6 +70,7 @@ enum class ErrorCode : uint32_t {
     SOFT_LIMIT = 305,
     EXCEEDS_LIMIT = 306,    ///< Per-move vel/accel exceeds motor max
     MOVE_REJECTED = 307,    ///< Hardware rejected the move (alert present or at active limit)
+    DEBUG_WAIT_TIMEOUT = 308,   ///< DEBUG-ONLY debug_wait exceeded its timeout
 
     // System errors (400-499)
     INTERNAL_ERROR = 400,
