@@ -49,7 +49,7 @@ Commands are sent as single lines terminated by newline (`\n`). Responses are se
 **Connection banner.** When a host opens the serial port, the controller emits a one-time `debug` banner identifying itself, before any command is sent:
 
 ```
-<- debug message="cutter ready" protocol=1 version=1.0.0 device_id=12648430
+<- debug message="cutter ready" protocol=1.1 version=1.1.0 device_id=12648430
 ```
 
 - `protocol` / `version` match the values returned by the `version` command.
@@ -234,8 +234,14 @@ Get firmware and protocol version.
 
 ```
 -> version
-<- ok version="1.0.0" protocol="1"
+<- ok version=1.1.0 protocol=1.1
 ```
+
+`version` and `protocol` are **SemVer strings**, not numbers. They appear unquoted
+only because they contain no spaces — compare them as strings, never parse them as
+floats (`protocol=1.10` ≠ `protocol=1.1`, and a numeric parse would also drop the
+trailing `.0` of `1.1.0`). The protocol version bumps its minor for
+backward-compatible additions and its major for breaking changes.
 
 #### emergency_stop
 

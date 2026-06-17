@@ -109,7 +109,11 @@ inline bool PinSupports(uint8_t pin, PinCap cap) {
 
 // === Protocol Version ===
 
-constexpr const char* CUTTER_VERSION = "1.0.0";
-constexpr const char* PROTOCOL_VERSION = "1";
+// Both are SemVer strings, NOT numbers - hosts must compare them as strings,
+// never parse as floats (e.g. "1.10" != "1.1"). They are emitted unquoted only
+// because they contain no spaces. Protocol bumps minor for backward-compatible
+// additions, major for breaking changes.
+constexpr const char* CUTTER_VERSION = "1.1.0";
+constexpr const char* PROTOCOL_VERSION = "1.1";
 
 }  // namespace Cutter

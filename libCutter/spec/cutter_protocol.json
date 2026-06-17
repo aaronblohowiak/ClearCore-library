@@ -1,8 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Cutter Protocol Specification",
-  "version": "1.0.0",
-  "protocol_version": "1",
+  "version": "1.1.0",
+  "protocol_version": "1.1",
+  "_version_note": "version (firmware) and protocol_version are SemVer STRINGS, compared as strings - never parsed as numbers/floats. On the wire they appear unquoted only because they contain no spaces.",
+  "changelog": {
+    "1.1": "Backward-compatible additions over 1.0: move_until command + sensor_stop event; debug_wait command + error 308 (DEBUG_WAIT_TIMEOUT); t_ms uptime field appended to every emitted line. Hosts speaking 1.0 remain compatible.",
+    "1": "Initial protocol."
+  },
 
   "types": {
     "motor_index": { "type": "uint8", "min": 0, "max": 3 },
@@ -94,7 +99,7 @@
     },
 
     "version": {
-      "description": "Get firmware version",
+      "description": "Get firmware version. Both response fields are SemVer strings, compared as strings (not parsed as numbers).",
       "valid_states": ["*"],
       "params": {},
       "response_params": ["version", "protocol"]
@@ -667,8 +672,8 @@
     "_comment": "A single 'debug' line emitted once when a host first connects (on the first byte received), before the first command's response.",
     "format": "debug message=\"cutter ready\" protocol=<protocol_version> version=<firmware_version> device_id=<uint32>",
     "params": {
-      "protocol": { "type": "string", "description": "Protocol version (matches the 'version' command's protocol param)" },
-      "version": { "type": "string", "description": "Firmware version (matches the 'version' command's version param)" },
+      "protocol": { "type": "string", "description": "Protocol version SemVer string, e.g. \"1.1\" (matches the 'version' command's protocol param). Compare as a string, not a number." },
+      "version": { "type": "string", "description": "Firmware version SemVer string, e.g. \"1.1.0\" (matches the 'version' command's version param). Compare as a string, not a number." },
       "device_id": { "type": "uint32", "description": "Board factory serial number (ClearCore NVM serial); stable per board" }
     }
   }

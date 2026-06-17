@@ -115,10 +115,11 @@ When a host opens the serial port, before any command is sent, the controller
 emits one `debug` line:
 
 ```
-debug message="cutter ready" protocol=1 version=1.0.0 device_id=12648430
+debug message="cutter ready" protocol=1.1 version=1.1.0 device_id=12648430
 ```
 
-- `protocol` / `version` equal what the `version` command returns.
+- `protocol` / `version` equal what the `version` command returns. Both are SemVer
+  **strings** (compare as strings, not numbers), unquoted only because they have no spaces.
 - `device_id` is the board's factory serial number — on ClearCore this is the
   NVM serial number (`ClearCore::NvmManager::SerialNumber()`), a `uint32` that is
   **stable across reboots and unique per board**. Use it to distinguish multiple

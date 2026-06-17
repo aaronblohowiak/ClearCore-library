@@ -39,7 +39,7 @@ TEST_F(IntegrationTest, ConnectionBannerEmittedOnPortOpenWithoutInput) {
     serial.SetPortOpen(true);
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput(
-        "debug message=\"cutter ready\" protocol=1 version=1.0.0 device_id=12648430"));
+        "debug message=\"cutter ready\" protocol=1.1 version=1.1.0 device_id=12648430"));
     EXPECT_EQ(ctrl->GetState(), State::CONNECTED);
 
     // Banner is emitted once per connection, not on every Update.
@@ -63,7 +63,7 @@ TEST_F(IntegrationTest, ConnectionBannerPrecedesFirstResponse) {
     auto lines = serial.GetOutputLines();
     ASSERT_GE(lines.size(), 2u);
     // Starts-with (not exact): every line now also carries a trailing t_ms stamp.
-    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=1 version=1.0.0 device_id=12648430", 0), 0u);
+    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=1.1 version=1.1.0 device_id=12648430", 0), 0u);
     EXPECT_EQ(lines[1].rfind("ok", 0), 0u);  // command response follows
 }
 
