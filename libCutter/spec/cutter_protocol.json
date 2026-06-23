@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Cutter Protocol Specification",
-  "version": "1.1.0",
-  "protocol_version": "1.1",
+  "version": "2.0.0",
+  "protocol_version": "2.0",
   "_version_note": "version (firmware) and protocol_version are SemVer STRINGS, compared as strings - never parsed as numbers/floats. On the wire they appear unquoted only because they contain no spaces.",
   "changelog": {
+    "2.0": "BREAKING: strict seq lockstep. A supplied 'seq' must now exactly equal the device's next internal seq; one that's ahead is rejected with error 107 (SEQ_MISMATCH), whose 'expected' carries the seq to resync to. Previously any increasing host-chosen seq was accepted. seq remains OPTIONAL — hosts that omit it are unaffected — but hosts that send it must track the device counter (query get_next_seq to resync). Hosts speaking 1.x that supplied arbitrary seq values are NOT compatible.",
     "1.1": "Backward-compatible additions over 1.0: move_until command + sensor_stop event; debug_wait command + error 308 (DEBUG_WAIT_TIMEOUT); t_ms uptime field appended to every emitted line. Hosts speaking 1.0 remain compatible.",
     "1": "Initial protocol."
   },
@@ -30,7 +31,7 @@
     "seq": {
       "type": "uint32",
       "required": false,
-      "description": "Sequence number for async correlation"
+      "description": "OPTIONAL lockstep sequence number. When supplied it must EXACTLY equal the device's next internal seq (the value get_next_seq returns); the device assigns internal seqs starting at 1 and incrementing once per command it processes (seq-bearing or not). A supplied seq that is behind is rejected with error 105 (STALE_SEQ); one that is ahead is rejected with error 107 (SEQ_MISMATCH) and the response's 'expected' field carries the seq to resync to. Hosts that supply seq must therefore track the device's command count; query get_next_seq to (re)sync. Omit seq entirely to skip lockstep verification."
     }
   },
 
@@ -52,6 +53,7 @@
     "104": { "name": "EPOCH_MISMATCH", "description": "Command epoch doesn't match current" },
     "105": { "name": "STALE_SEQ", "description": "Sequence number already seen" },
     "106": { "name": "INPUT_OVERFLOW", "description": "Command line exceeded buffer" },
+    "107": { "name": "SEQ_MISMATCH", "description": "Supplied seq is ahead of the device's next internal seq (host out of lockstep); 'expected' carries the device's next seq to resync to" },
     "200": { "name": "INVALID_PIN", "description": "Pin index out of range" },
     "201": { "name": "PIN_NOT_CONFIGURED", "description": "Pin not configured" },
     "202": { "name": "PIN_CAPABILITY", "description": "Pin doesn't support requested mode" },
@@ -114,7 +116,7 @@
     },
 
     "get_next_seq": {
-      "description": "Get next sequence number",
+      "description": "Get the seq the next command must carry for lockstep. NOTE: get_next_seq is itself a command and consumes a seq, so 'next_seq' is the value to put on your VERY NEXT command only; querying again returns a larger value. Use it to (re)sync after a 107 (SEQ_MISMATCH), then track the counter yourself.",
       "valid_states": ["*"],
       "params": {},
       "response_params": ["next_seq"]
@@ -672,8 +674,8 @@
     "_comment": "A single 'debug' line emitted once when a host first connects (on the first byte received), before the first command's response.",
     "format": "debug message=\"cutter ready\" protocol=<protocol_version> version=<firmware_version> device_id=<uint32>",
     "params": {
-      "protocol": { "type": "string", "description": "Protocol version SemVer string, e.g. \"1.1\" (matches the 'version' command's protocol param). Compare as a string, not a number." },
-      "version": { "type": "string", "description": "Firmware version SemVer string, e.g. \"1.1.0\" (matches the 'version' command's version param). Compare as a string, not a number." },
+      "protocol": { "type": "string", "description": "Protocol version SemVer string, e.g. \"2.0\" (matches the 'version' command's protocol param). Compare as a string, not a number." },
+      "version": { "type": "string", "description": "Firmware version SemVer string, e.g. \"2.0.0\" (matches the 'version' command's version param). Compare as a string, not a number." },
       "device_id": { "type": "uint32", "description": "Board factory serial number (ClearCore NVM serial); stable per board" }
     }
   }

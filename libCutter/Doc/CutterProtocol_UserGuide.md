@@ -49,7 +49,7 @@ Commands are sent as single lines terminated by newline (`\n`). Responses are se
 **Connection banner.** When a host opens the serial port, the controller emits a one-time `debug` banner identifying itself, before any command is sent:
 
 ```
-<- debug message="cutter ready" protocol=1.1 version=1.1.0 device_id=12648430
+<- debug message="cutter ready" protocol=2.0 version=2.0.0 device_id=12648430
 ```
 
 - `protocol` / `version` match the values returned by the `version` command.
@@ -100,16 +100,33 @@ command_name [param1=value1] [param2=value2] ...
 Commands support optional `epoch` and `seq` (sequence) parameters for tracking asynchronous operations:
 
 ```
-move motor=0 steps=1000 epoch=5 seq=42
+move motor=0 steps=1000 epoch=5 seq=6
 ```
 
 **Epoch** - Increments on each error. Commands with mismatched epoch are rejected.
 
-**Sequence (seq)** - User-provided command identifier. Returned in async events to correlate results with commands.
+**Sequence (seq)** - Optional lockstep verification number. The device assigns
+its own internal seq to every command (starting at 1, incrementing once per
+command it processes) and echoes that internal seq in responses and async events
+to correlate results with commands. Supplying `seq` is **optional**, but when you
+do, it must **exactly equal the device's next internal seq** — it is a lockstep
+check, not a free identifier:
 
-When a motor move completes, the event includes the original epoch/seq:
+- A `seq` that is **behind** the highest seen is rejected with error 105
+  (`STALE_SEQ`).
+- A `seq` that is **ahead** of the device's counter is rejected with error 107
+  (`SEQ_MISMATCH`); the error's `expected` field carries the device's next seq.
+  This means the host counted a command the device never processed (a drop) and
+  has drifted out of lockstep.
+
+To (re)synchronize, query `get_next_seq` and send that value next. Omit `seq`
+entirely to skip the check. (This is a **breaking change in protocol 2.0**;
+1.x accepted any increasing host-chosen seq. The `seq=N` values in the examples
+below are illustrative — supply the device's actual next seq, or omit it.)
+
+When a motor move completes, the event includes the device's epoch/seq:
 ```
-event type=done motor=0 epoch=5 seq=42 position=1000
+event type=done motor=0 epoch=5 seq=6 position=1000
 ```
 
 ### Response Format
@@ -198,7 +215,7 @@ ERROR -> CONNECTED (on reset command)
 | `status` | Query system status | `status` |
 | `version` | Get firmware version | `version` |
 | `emergency_stop` | Emergency stop all motors | `emergency_stop` |
-| `get_next_seq` | Get next sequence number | `get_next_seq` |
+| `get_next_seq` | Get the seq the next command must carry (lockstep resync) | `get_next_seq` |
 | `get_status` | Dump all configured pins and motors | `get_status` |
 
 #### ping
@@ -234,7 +251,7 @@ Get firmware and protocol version.
 
 ```
 -> version
-<- ok version=1.1.0 protocol=1.1
+<- ok version=2.0.0 protocol=2.0
 ```
 
 `version` and `protocol` are **SemVer strings**, not numbers. They appear unquoted
@@ -955,8 +972,9 @@ which consumes the alert itself), only the `limit` event fires.
 | 102 | MISSING_PARAM | Required parameter missing |
 | 103 | INVALID_STATE | Command not valid in current state |
 | 104 | EPOCH_MISMATCH | Command epoch doesn't match current |
-| 105 | STALE_SEQ | Sequence number already seen |
+| 105 | STALE_SEQ | Supplied seq is behind the device counter (already seen) |
 | 106 | INPUT_OVERFLOW | Command line exceeded 511 character limit |
+| 107 | SEQ_MISMATCH | Supplied seq is ahead of the device's next internal seq (host out of lockstep); `expected` carries the seq to resync to |
 
 ### Pin Errors (200-299)
 

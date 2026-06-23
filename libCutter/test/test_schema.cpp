@@ -332,7 +332,7 @@ TEST_F(SchemaTest, RequiredParamsEnforced) {
     ctrl->Update();
     serial.SendLine("enable motor=0");
     ctrl->Update();
-    SET_MOTOR_READY(0);
+    SET_MOTOR_READY(0, true);
     ctrl->Update();
     serial.Clear();
 
@@ -419,9 +419,13 @@ TEST_F(SchemaTest, AnalogPinLimits) {
 TEST_F(SchemaTest, EdgeModeValues) {
     std::vector<std::string> valid_modes = {"none", "rising", "falling", "both"};
 
+    // Use a distinct pin per mode: a pin can only be configured once, so reusing
+    // the same pin would fail the second iteration with a duplicate-config error.
+    int pin = 0;
     for (const auto& mode : valid_modes) {
         serial.Clear();
-        serial.SendLine(("configure_digital_in pin=0 report_edges=" + mode).c_str());
+        serial.SendLine(("configure_digital_in pin=" + std::to_string(pin++) +
+                         " report_edges=" + mode).c_str());
         ctrl->Update();
         EXPECT_TRUE(IsOk()) << "Edge mode '" << mode << "' should be valid";
     }

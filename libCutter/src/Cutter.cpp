@@ -169,9 +169,13 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
         return;
     }
 
-    // Check user-supplied seq for staleness (using serial number arithmetic for wrap-around)
-    // A seq is stale if it's <= the max we've seen (accounting for wrap)
-    // User-supplied seq/epoch are for verification/sync only, not command identification
+    // Lockstep seq verification (seq is OPTIONAL; this whole block is skipped if
+    // the host omits it). When supplied, a seq must EXACTLY equal m_nextSeq -- the
+    // internal id we are about to assign. Two failure directions:
+    //   - behind  (seq <= m_maxSeenSeq, serial-number arithmetic for wrap): STALE_SEQ
+    //   - ahead   (seq != m_nextSeq):                                       SEQ_MISMATCH
+    // A supplied seq/epoch is for verification/sync only, never command identification:
+    // the device always assigns its own internal id regardless of what the host sends.
     if (cmd.has_seq) {
         if (m_seenAnySeq) {
             int32_t diff = static_cast<int32_t>(cmd.seq - m_maxSeenSeq);
@@ -184,6 +188,23 @@ void Controller::DispatchCommand(const ParsedCommand& cmd) {
                 return;
             }
         }
+        // Lockstep verification: a supplied seq must equal the next internal seq
+        // we are about to assign. Staleness (above) catches a seq that's behind;
+        // this catches one that's ahead — i.e. the host counted a command we
+        // never processed (a drop), so it has drifted out of lockstep. Reject
+        // and hand back the seq it must resync to, instead of silently assigning
+        // a different id and letting the host's ack correlation shear. Check
+        // BEFORE updating m_maxSeenSeq so the rejected (ahead) value can't poison
+        // the watermark and make the resync target look stale.
+        if (cmd.seq != m_nextSeq) {
+            m_response.Error(static_cast<uint32_t>(ErrorCode::SEQ_MISMATCH),
+                             "Sequence ahead of device");
+            m_response.Param("seq", cmd.seq);
+            m_response.Param("expected", m_nextSeq);
+            SendResponse();
+            return;  // do NOT assign an id / advance m_nextSeq
+        }
+
         m_maxSeenSeq = cmd.seq;
         m_seenAnySeq = true;
     }

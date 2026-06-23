@@ -155,8 +155,8 @@ TEST_F(MotorTest, MoveAbsolute) {
 TEST_F(MotorTest, MoveCompletion) {
     ConfigureAndEnableStepper();
 
-    // User-supplied seq=42 is for verification, internal seq is assigned
-    serial.SendLine("move seq=42 motor=0 steps=1000");
+    // seq omitted (lockstep verification is optional); internal seq is assigned
+    serial.SendLine("move motor=0 steps=1000");
     ctrl->Update();
 
     // Get the internal seq from response
@@ -261,7 +261,7 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMax) {
     serial.ClearOutput();
 
     // Start velocity move toward max limit
-    serial.SendLine("move_velocity seq=50 motor=0 velocity=1000");
+    serial.SendLine("move_velocity motor=0 velocity=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_EQ(ctrl->GetState(), State::WORKING);
@@ -302,7 +302,7 @@ TEST_F(MotorTest, VelocityMoveSoftLimitMin) {
     serial.ClearOutput();
 
     // Start velocity move toward min limit (negative velocity)
-    serial.SendLine("move_velocity seq=51 motor=0 velocity=-1000");
+    serial.SendLine("move_velocity motor=0 velocity=-1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
 
@@ -572,9 +572,9 @@ TEST_F(MotorTest, DoneEventIncludesEpoch) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Move with user-supplied epoch=0 and seq=99 (for verification)
-    // Response and event will use internal seq
-    serial.SendLine("move epoch=0 seq=99 motor=0 steps=1000");
+    // Move with user-supplied epoch=0; seq omitted (lockstep is optional).
+    // Response and event will use the internal seq.
+    serial.SendLine("move epoch=0 motor=0 steps=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
 
@@ -607,8 +607,8 @@ TEST_F(MotorTest, SoftLimitEventIncludesEpoch) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Velocity move with user-supplied epoch=0 and seq=55 (for verification)
-    serial.SendLine("move_velocity epoch=0 seq=55 motor=0 velocity=1000");
+    // Velocity move with user-supplied epoch=0; seq omitted (lockstep is optional)
+    serial.SendLine("move_velocity epoch=0 motor=0 velocity=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
 
@@ -827,8 +827,8 @@ TEST_F(MotorTest, EStopTriggerDuringMove) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Start a move with user-supplied seq=42 (for verification)
-    serial.SendLine("move seq=42 motor=0 steps=10000");
+    // Start a move (seq omitted; lockstep verification is optional)
+    serial.SendLine("move motor=0 steps=10000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_TRUE(ctrl->GetMotor(0)->moving);
@@ -911,7 +911,7 @@ TEST_F(MotorTest, EStopEventIncludesEpoch) {
     serial.ClearOutput();
 
     // Start a move with user-supplied epoch and seq (for verification)
-    serial.SendLine("move epoch=0 seq=77 motor=0 steps=10000");
+    serial.SendLine("move epoch=0 motor=0 steps=10000");
     ctrl->Update();
 
     // Get internal seq from response
@@ -947,7 +947,7 @@ TEST_F(MotorTest, LimitTriggerDuringMoveEmitsEvent) {
     serial.ClearOutput();
 
     // Start a move and capture the internal seq from the ok response
-    serial.SendLine("move seq=42 motor=0 steps=10000");
+    serial.SendLine("move motor=0 steps=10000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_TRUE(ctrl->GetMotor(0)->moving);

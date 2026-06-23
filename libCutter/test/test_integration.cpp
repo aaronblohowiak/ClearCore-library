@@ -39,7 +39,7 @@ TEST_F(IntegrationTest, ConnectionBannerEmittedOnPortOpenWithoutInput) {
     serial.SetPortOpen(true);
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput(
-        "debug message=\"cutter ready\" protocol=1.1 version=1.1.0 device_id=12648430"));
+        "debug message=\"cutter ready\" protocol=2.0 version=2.0.0 device_id=12648430"));
     EXPECT_EQ(ctrl->GetState(), State::CONNECTED);
 
     // Banner is emitted once per connection, not on every Update.
@@ -63,7 +63,7 @@ TEST_F(IntegrationTest, ConnectionBannerPrecedesFirstResponse) {
     auto lines = serial.GetOutputLines();
     ASSERT_GE(lines.size(), 2u);
     // Starts-with (not exact): every line now also carries a trailing t_ms stamp.
-    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=1.1 version=1.1.0 device_id=12648430", 0), 0u);
+    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=2.0 version=2.0.0 device_id=12648430", 0), 0u);
     EXPECT_EQ(lines[1].rfind("ok", 0), 0u);  // command response follows
 }
 
@@ -115,8 +115,9 @@ TEST_F(IntegrationTest, FullMotionCycle) {
     EXPECT_EQ(ctrl->GetState(), State::READY);
     serial.ClearOutput();
 
-    // Start move (user seq=1 is for verification, internal seq=4 is used)
-    serial.SendLine("move seq=1 motor=0 steps=1000");
+    // Start move. Lockstep: supplied seq must equal the device's next internal
+    // seq, which is 4 here (ping=1, configure=2, enable=3, move=4).
+    serial.SendLine("move seq=4 motor=0 steps=1000");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     // Internal seq is assigned (command 4: ping=1, configure=2, enable=3, move=4)
@@ -150,10 +151,10 @@ TEST_F(IntegrationTest, MultiMotorMotion) {
     ctrl->Update();
     serial.ClearOutput();
 
-    // Start moves on both motors
-    serial.SendLine("move seq=1 motor=0 steps=1000");
+    // Start moves on both motors (seq omitted: lockstep verification is optional)
+    serial.SendLine("move motor=0 steps=1000");
     ctrl->Update();
-    serial.SendLine("move seq=2 motor=1 steps=2000");
+    serial.SendLine("move motor=1 steps=2000");
     ctrl->Update();
     serial.ClearOutput();
 
@@ -235,22 +236,21 @@ TEST_F(IntegrationTest, ErrorRecoveryCycle) {
 }
 
 // === Internal Sequence Number ===
-// Every command gets an internal seq, not the user-supplied one
-// User-supplied seq is only for verification (staleness check)
+// Every command gets an internal seq. A supplied seq is verification-only and,
+// under lockstep, must exactly equal that next internal seq.
 
 TEST_F(IntegrationTest, SeqRoundTrip) {
     serial.SendLine("ping");
     ctrl->Update();
     serial.ClearOutput();
 
-    // User-supplied seq=12345 is for verification only
-    // Response includes internal seq (which increments from 1)
-    serial.SendLine("ping seq=12345");
+    // After the ping above, the device's next internal seq is 2. A supplied seq
+    // must match it exactly (lockstep); the response echoes that same internal seq.
+    serial.SendLine("ping seq=2");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("ok"));
     EXPECT_TRUE(serial.HasOutput("epoch=0"));
-    // Response includes internal seq=2 (ping in setup was seq=1)
     EXPECT_TRUE(serial.HasOutput("seq=2"));
 }
 

@@ -4,11 +4,27 @@
  */
 
 #include <gtest/gtest.h>
+#include <cstdio>
 #include "Cutter.h"
 #include "FakeHal.h"
 #include "TestSerial.h"
 
 using namespace Cutter;
+
+// Issue get_next_seq and return the device's reported next internal seq.
+// This is the canonical way a host (re)synchronizes its lockstep counter.
+static uint32_t QueryNextSeq(TestSerial& serial, Controller* ctrl) {
+    serial.ClearOutput();
+    serial.SendLine("get_next_seq");
+    ctrl->Update();
+    std::string out = serial.GetOutput();
+    size_t pos = out.find("next_seq=");
+    EXPECT_NE(pos, std::string::npos) << "get_next_seq response: " << out;
+    uint32_t next = 0;
+    sscanf(out.c_str() + pos, "next_seq=%u", &next);
+    serial.ClearOutput();
+    return next;
+}
 
 class ErrorTest : public ::testing::Test {
 protected:
@@ -41,11 +57,14 @@ TEST_F(ErrorTest, UnknownCommand) {
 }
 
 TEST_F(ErrorTest, UnknownCommandWithSeq) {
-    serial.SendLine("foobar seq=42");
+    // seq must be lockstep-valid (next internal seq is 2 after SetUp's ping) so
+    // the command reaches dispatch; the unknown-command error echoes the seq.
+    serial.SendLine("foobar seq=2");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("error"));
-    EXPECT_TRUE(serial.HasOutput("seq=42"));
+    EXPECT_TRUE(serial.HasOutput("Unknown command"));
+    EXPECT_TRUE(serial.HasOutput("seq=2"));
 }
 
 // === Epoch Mismatch ===
@@ -229,34 +248,42 @@ TEST_F(ErrorTest, EmergencyStopFromReady) {
 
 // === Stale Sequence Tests ===
 
+// Lockstep note: SetUp() sends one seq-less `ping`, so the device's next
+// internal seq is 2 at the start of every test below. A supplied seq must
+// match that counter exactly.
+
 TEST_F(ErrorTest, StaleSeqRejected) {
-    // First command with seq=100
-    serial.SendLine("ping seq=100");
+    // Walk the counter forward in lockstep: seq 2 then 3.
+    serial.SendLine("ping seq=2");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+    serial.SendLine("ping seq=3");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     serial.ClearOutput();
 
-    // Second command with lower seq=50 - should be rejected
-    serial.SendLine("ping seq=50");
+    // A seq behind the highest seen (2 < max_seen 3) is stale - rejected.
+    serial.SendLine("ping seq=2");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("error"));
     EXPECT_TRUE(serial.HasOutput("code=105"));  // STALE_SEQ
-    EXPECT_TRUE(serial.HasOutput("seq=50"));
-    EXPECT_TRUE(serial.HasOutput("max_seen=100"));
+    EXPECT_TRUE(serial.HasOutput("seq=2"));
+    EXPECT_TRUE(serial.HasOutput("max_seen=3"));
     // Should NOT enter error state - just reject this command
     EXPECT_NE(ctrl->GetState(), State::ERROR);
 }
 
 TEST_F(ErrorTest, DuplicateSeqRejected) {
-    // First command with seq=100
-    serial.SendLine("ping seq=100");
+    // First command in lockstep with the device counter (seq=2).
+    serial.SendLine("ping seq=2");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     serial.ClearOutput();
 
-    // Second command with same seq=100 - should be rejected
-    serial.SendLine("ping seq=100");
+    // Re-sending the same seq=2 is now behind the counter - stale, rejected.
+    serial.SendLine("ping seq=2");
     ctrl->Update();
 
     EXPECT_TRUE(serial.HasOutput("error"));
@@ -264,32 +291,135 @@ TEST_F(ErrorTest, DuplicateSeqRejected) {
     EXPECT_NE(ctrl->GetState(), State::ERROR);
 }
 
-TEST_F(ErrorTest, IncreasingSeqAccepted) {
-    serial.SendLine("ping seq=1");
-    ctrl->Update();
-    EXPECT_TRUE(serial.HasOutput("ok"));
-    serial.ClearOutput();
-
+TEST_F(ErrorTest, LockstepSeqAccepted) {
+    // Each supplied seq exactly equals the device's next internal seq.
     serial.SendLine("ping seq=2");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     serial.ClearOutput();
 
-    serial.SendLine("ping seq=100");
-    ctrl->Update();
-    EXPECT_TRUE(serial.HasOutput("ok"));
-}
-
-TEST_F(ErrorTest, SeqWrapAroundAccepted) {
-    // Send command with seq near UINT32_MAX
-    serial.SendLine("ping seq=4294967290");  // UINT32_MAX - 5
+    serial.SendLine("ping seq=3");
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
     serial.ClearOutput();
 
-    // Send command with seq that wrapped (low number after high)
-    // Using serial number arithmetic, 5 is "ahead" of 4294967290
+    serial.SendLine("ping seq=4");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+TEST_F(ErrorTest, SeqAheadRejected) {
+    // A supplied seq ahead of the device counter (next is 2, host sends 5)
+    // means the host counted a command the device never processed: SEQ_MISMATCH.
     serial.SendLine("ping seq=5");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=107"));  // SEQ_MISMATCH
+    EXPECT_TRUE(serial.HasOutput("seq=5"));
+    EXPECT_TRUE(serial.HasOutput("expected=2"));  // resync target
+    EXPECT_NE(ctrl->GetState(), State::ERROR);
+    serial.ClearOutput();
+
+    // The rejected command did not advance the counter: resyncing to the
+    // device's reported next seq (2) is accepted.
+    serial.SendLine("ping seq=2");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+// Canonical host workflow: drive the supplied seq straight from get_next_seq.
+// get_next_seq reports the exact seq the very next command must carry, so a host
+// can always (re)sync by querying it and echoing the value. Note get_next_seq is
+// itself a command that advances the counter, so successive queries return
+// strictly increasing values.
+TEST_F(ErrorTest, GetNextSeqDrivesLockstep) {
+    uint32_t prev = 0;
+    for (int i = 0; i < 3; i++) {
+        uint32_t next = QueryNextSeq(serial, ctrl);
+        EXPECT_GT(next, prev) << "get_next_seq must report an advancing counter";
+        prev = next;
+
+        char cmd[32];
+        snprintf(cmd, sizeof(cmd), "ping seq=%u", next);
+        serial.SendLine(cmd);
+        ctrl->Update();
+        EXPECT_TRUE(serial.HasOutput("ok"))
+            << "ping seq=" << next << " (from get_next_seq) should be in lockstep";
+    }
+}
+
+// Recovery workflow: after drifting ahead (e.g. a dropped command the host still
+// counted), the host re-reads get_next_seq and resyncs instead of guessing.
+TEST_F(ErrorTest, ResyncViaGetNextSeqAfterMismatch) {
+    uint32_t next = QueryNextSeq(serial, ctrl);  // seq the next command must carry
+
+    // Host believes it is further along than the device and sends a seq the
+    // device has not reached: rejected as SEQ_MISMATCH, not silently accepted.
+    char ahead[32];
+    snprintf(ahead, sizeof(ahead), "ping seq=%u", next + 5);
+    serial.SendLine(ahead);
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("code=107"));  // SEQ_MISMATCH
+    char expected[32];
+    snprintf(expected, sizeof(expected), "expected=%u", next);
+    EXPECT_TRUE(serial.HasOutput(expected));  // device reports where it actually is
+    // The rejection must not advance the counter (no id assigned for it).
+    EXPECT_FALSE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // Recover: re-read get_next_seq and send exactly that value to resync.
+    uint32_t resync = QueryNextSeq(serial, ctrl);
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "ping seq=%u", resync);
+    serial.SendLine(cmd);
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+}
+
+// The value get_next_seq returns is exactly the seq the next command must carry,
+// EVEN when that next command is itself get_next_seq: get_next_seq reports the
+// post-increment counter, so `get_next_seq -> N` then `get_next_seq seq=N` is ok
+// and reports N+1.
+TEST_F(ErrorTest, GetNextSeqAcceptsItsOwnReturnedSeq) {
+    uint32_t n = QueryNextSeq(serial, ctrl);  // next command must carry n
+
+    char cmd[40];
+    snprintf(cmd, sizeof(cmd), "get_next_seq seq=%u", n);
+    serial.SendLine(cmd);
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok")) << "get_next_seq seq=" << n
+        << " (its own returned value) should be in lockstep";
+    char nextOut[40];
+    snprintf(nextOut, sizeof(nextOut), "next_seq=%u", n + 1);
+    EXPECT_TRUE(serial.HasOutput(nextOut));
+}
+
+// A desync is a signal, not a silent drop: an unknown command (lockstep-valid
+// seq, so it reaches dispatch) still CONSUMES a seq and returns an error. The
+// host that sent it learns the firmware is not where it believed.
+TEST_F(ErrorTest, UnknownCommandConsumesSeqAndErrors) {
+    uint32_t n = QueryNextSeq(serial, ctrl);
+
+    char bad[40];
+    snprintf(bad, sizeof(bad), "bogus seq=%u", n);
+    serial.SendLine(bad);
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("code=100"));  // UNKNOWN_COMMAND, still an error
+    serial.ClearOutput();
+
+    // The unknown command advanced the counter: the next valid command must use
+    // n+1 (n is now stale).
+    char stale[40];
+    snprintf(stale, sizeof(stale), "ping seq=%u", n);
+    serial.SendLine(stale);
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("code=105"));  // STALE_SEQ - counter moved on
+    serial.ClearOutput();
+
+    char good[40];
+    snprintf(good, sizeof(good), "ping seq=%u", n + 1);
+    serial.SendLine(good);
     ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("ok"));
 }

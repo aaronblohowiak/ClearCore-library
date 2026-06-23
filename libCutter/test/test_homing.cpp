@@ -79,7 +79,7 @@ TEST_F(HomingTest, HomeRequiresEnabled) {
 // === Homing Sequence ===
 
 TEST_F(HomingTest, HomingSequenceComplete) {
-    serial.SendLine("home seq=10 motor=0");
+    serial.SendLine("home motor=0");
     ctrl->Update();
 
     // Get internal seq from response

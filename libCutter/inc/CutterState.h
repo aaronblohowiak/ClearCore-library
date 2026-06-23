@@ -50,6 +50,7 @@ enum class ErrorCode : uint32_t {
     EPOCH_MISMATCH = 104,
     STALE_SEQ = 105,        ///< Sequence number is stale (lower than previously seen)
     INPUT_OVERFLOW = 106,   ///< Command line exceeded input buffer
+    SEQ_MISMATCH = 107,     ///< Supplied seq is ahead of the next internal seq (host out of lockstep)
 
     // Pin errors (200-299)
     INVALID_PIN = 200,
