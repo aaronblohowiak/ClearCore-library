@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Cutter Protocol Specification",
-  "version": "2.0.0",
-  "protocol_version": "2.0",
+  "version": "2.1.0",
+  "protocol_version": "2.1",
   "_version_note": "version (firmware) and protocol_version are SemVer STRINGS, compared as strings - never parsed as numbers/floats. On the wire they appear unquoted only because they contain no spaces.",
   "changelog": {
+    "2.1": "Backward-compatible additions over 2.0: get_status is now a complete dump of settable state. The summary row carries 'motor_clock' (the board-global motor step clock rate) so a host can confirm a set_motor_clock took effect. The motor row adds enable_priority, hlfb_timeout (ClearPath/SDSK), the limit_switch homing config (homing_direction/seek_velocity/latch_velocity/backoff, limit_neg_pin/limit_pos_pin), and the configure_estop pin/decel (estop_pin/estop_decel); the digital_in pin row adds report_changes. All are optional fields, present only when relevant. Hosts speaking 2.0 remain compatible.",
     "2.0": "BREAKING: strict seq lockstep. A supplied 'seq' must now exactly equal the device's next internal seq; one that's ahead is rejected with error 107 (SEQ_MISMATCH), whose 'expected' carries the seq to resync to. Previously any increasing host-chosen seq was accepted. seq remains OPTIONAL — hosts that omit it are unaffected — but hosts that send it must track the device counter (query get_next_seq to resync). Hosts speaking 1.x that supplied arbitrary seq values are NOT compatible.",
     "1.1": "Backward-compatible additions over 1.0: move_until command + sensor_stop event; debug_wait command + error 308 (DEBUG_WAIT_TIMEOUT); t_ms uptime field appended to every emitted line. Hosts speaking 1.0 remain compatible.",
     "1": "Initial protocol."
@@ -127,7 +128,7 @@
       "valid_states": ["*"],
       "params": {},
       "emits_status": ["pin", "motor", "summary"],
-      "response_note": "Emits one 'status type=pin' row per configured pin and one 'status type=motor' row per configured motor, terminated by a 'status type=summary' row carrying pin_count/motor_count. Does NOT emit a trailing 'ok'; the summary row marks the end of the stream."
+      "response_note": "Emits one 'status type=pin' row per configured pin and one 'status type=motor' row per configured motor, terminated by a 'status type=summary' row carrying pin_count/motor_count and the board-global motor_clock rate. Does NOT emit a trailing 'ok'; the summary row marks the end of the stream."
     },
 
     "configure_sdsk": {
@@ -467,7 +468,7 @@
   "status": {
     "_comment": "Solicited query-payload rows (prefix 'status type=...'). Not asynchronous events. Emitted by get_status; carry the requesting command's epoch/seq.",
     "pin": {
-      "description": "Pin status row (from get_status)",
+      "description": "Pin status row (from get_status). Beyond pin/mode, carries mode-specific fields: digital_in adds value, invert, report_changes (when on), report_edges (when not none), error_trigger (when enabled); digital_out adds value, on_error, max_ms; analog_in adds value, error_low/high, report_interval; pwm adds duty; hbridge adds value (+ tone_freq/tone_amplitude when active); end_stop adds triggered, triggered_value. Absent optional fields mean default/disabled.",
       "params": {
         "pin": { "type": "pin_index" },
         "mode": { "type": "string" },
@@ -476,7 +477,7 @@
       }
     },
     "motor": {
-      "description": "Motor status row (from get_status)",
+      "description": "Motor status row (from get_status). Optional fields are present only when relevant: hlfb_timeout for ClearPath/SDSK; soft_limit_min/max when soft limits are enabled; the homing_* and limit_*_pin fields when homing_mode=limit_switch; estop_pin/estop_decel when an E-Stop pin is configured; velocity_move/homing_state only while active.",
       "params": {
         "motor": { "type": "motor_index" },
         "motor_type": { "type": "string" },
@@ -487,15 +488,30 @@
         "homing_mode": { "type": "string" },
         "vel_max": { "type": "int32" },
         "accel_max": { "type": "int32" },
+        "enable_priority": { "type": "uint8", "description": "Enable/home order (lower = earlier)" },
+        "hlfb_timeout": { "type": "uint32", "description": "ClearPath/SDSK only: max ms to wait for HLFB after enable" },
+        "soft_limit_min": { "type": "int32", "description": "Present only when soft limits enabled" },
+        "soft_limit_max": { "type": "int32", "description": "Present only when soft limits enabled" },
+        "homing_direction": { "type": "direction", "description": "Present only when homing_mode=limit_switch" },
+        "homing_seek_velocity": { "type": "int32", "description": "Present only when homing_mode=limit_switch" },
+        "homing_latch_velocity": { "type": "int32", "description": "Present only when homing_mode=limit_switch" },
+        "homing_backoff": { "type": "int32", "description": "Present only when homing_mode=limit_switch" },
+        "limit_neg_pin": { "type": "pin_index", "description": "Present when homing_mode=limit_switch and a negative limit pin is set" },
+        "limit_pos_pin": { "type": "pin_index", "description": "Present when homing_mode=limit_switch and a positive limit pin is set" },
+        "estop_pin": { "type": "pin_index", "description": "Sensor E-Stop input pin; present only when configure_estop set one" },
+        "estop_decel": { "type": "uint32", "description": "E-Stop decel (steps/sec^2); present only when a non-default decel was set" },
+        "velocity_move": { "type": "bool", "description": "Present only while a velocity move is in flight" },
+        "homing_state": { "type": "string", "description": "Present only while homing is in progress" },
         "epoch": { "type": "uint32" },
         "seq": { "type": "uint32" }
       }
     },
     "summary": {
-      "description": "Terminating row for a get_status stream; carries counts and marks the end (no trailing 'ok')",
+      "description": "Terminating row for a get_status stream; carries counts and the board-global motor clock rate, and marks the end (no trailing 'ok')",
       "params": {
         "pin_count": { "type": "int32" },
         "motor_count": { "type": "int32" },
+        "motor_clock": { "type": "clock_rate", "description": "Board-global motor step clock rate currently applied (set via set_motor_clock); defaults to 'normal' until changed. Lets a host confirm a set_motor_clock took effect." },
         "epoch": { "type": "uint32" },
         "seq": { "type": "uint32" }
       }
@@ -674,8 +690,8 @@
     "_comment": "A single 'debug' line emitted once when a host first connects (on the first byte received), before the first command's response.",
     "format": "debug message=\"cutter ready\" protocol=<protocol_version> version=<firmware_version> device_id=<uint32>",
     "params": {
-      "protocol": { "type": "string", "description": "Protocol version SemVer string, e.g. \"2.0\" (matches the 'version' command's protocol param). Compare as a string, not a number." },
-      "version": { "type": "string", "description": "Firmware version SemVer string, e.g. \"2.0.0\" (matches the 'version' command's version param). Compare as a string, not a number." },
+      "protocol": { "type": "string", "description": "Protocol version SemVer string, e.g. \"2.1\" (matches the 'version' command's protocol param). Compare as a string, not a number." },
+      "version": { "type": "string", "description": "Firmware version SemVer string, e.g. \"2.1.0\" (matches the 'version' command's version param). Compare as a string, not a number." },
       "device_id": { "type": "uint32", "description": "Board factory serial number (ClearCore NVM serial); stable per board" }
     }
   }

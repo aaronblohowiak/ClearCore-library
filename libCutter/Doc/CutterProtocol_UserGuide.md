@@ -49,7 +49,7 @@ Commands are sent as single lines terminated by newline (`\n`). Responses are se
 **Connection banner.** When a host opens the serial port, the controller emits a one-time `debug` banner identifying itself, before any command is sent:
 
 ```
-<- debug message="cutter ready" protocol=2.0 version=2.0.0 device_id=12648430
+<- debug message="cutter ready" protocol=2.1 version=2.1.0 device_id=12648430
 ```
 
 - `protocol` / `version` match the values returned by the `version` command.
@@ -251,7 +251,7 @@ Get firmware and protocol version.
 
 ```
 -> version
-<- ok version=2.0.0 protocol=2.0
+<- ok version=2.1.0 protocol=2.1
 ```
 
 `version` and `protocol` are **SemVer strings**, not numbers. They appear unquoted
@@ -271,28 +271,29 @@ Immediately stop all motors and enter ERROR state.
 
 #### get_status
 
-Dump the full configured state: one `status` row per configured pin, one per configured motor, terminated by a `status type=summary` row that carries the counts. The response uses the [status channel](#response-format), not events.
+Dump the full configured state: one `status` row per configured pin, one per configured motor, terminated by a `status type=summary` row that carries the counts and the board-global motor step clock rate. The response uses the [status channel](#response-format), not events.
 
 ```
 -> get_status seq=7
 <- status type=pin epoch=1 seq=7 pin=0 mode=digital_in value=1 invert=0
-<- status type=motor epoch=1 seq=7 motor=0 motor_type=clearpath enabled=1 moving=0 position=0 homed=1 homing_mode=msp vel_max=10000 accel_max=100000
-<- status type=summary epoch=1 seq=7 pin_count=1 motor_count=1
+<- status type=motor epoch=1 seq=7 motor=0 motor_type=clearpath enabled=1 moving=0 position=0 homed=1 homing_mode=msp vel_max=10000 accel_max=100000 enable_priority=0 hlfb_timeout=5000
+<- status type=summary epoch=1 seq=7 pin_count=1 motor_count=1 motor_clock=normal
 ```
 
 **Client parsing contract:**
 
 - Read `status` rows carrying the request's `epoch`/`seq` until you receive `status type=summary` with the same id. The summary row **terminates** the response — there is **no trailing `ok`**.
-- With nothing configured, only the summary row is returned: `status type=summary epoch=1 seq=7 pin_count=0 motor_count=0`.
+- With nothing configured, only the summary row is returned: `status type=summary epoch=1 seq=7 pin_count=0 motor_count=0 motor_clock=normal`.
+- `motor_clock` reports the board-global step clock rate (`low`/`normal`/`high`) currently applied; it defaults to `normal` until a `set_motor_clock` changes it. Read it to confirm a `set_motor_clock rate=low` took effect.
 - Rows carry only the fields relevant to each pin's `mode` / motor configuration; **absent optional fields mean "default / disabled"** (e.g. no `report_edges` means edge reporting is off).
 - The motor row's kind is `motor_type=` (not `type=`), so it does not collide with the line's leading `type=` key. Build your key/value map accordingly.
 - Asynchronous `event` lines (e.g. a `limit` trip) may interleave between status rows; they carry a **different** `epoch`/`seq` (or none). Filter by the request id rather than assuming every line up to the summary belongs to `get_status`.
 
 | Row (`type=`) | Key fields |
 |---------------|-----------|
-| `pin` | `pin`, `mode`, then mode-specific fields (`value`, `invert`, `report_edges`, `duty`, `triggered`, ...) |
-| `motor` | `motor`, `motor_type`, `enabled`, `moving`, `position`, `homed`, `homing_mode`, `vel_max`, `accel_max` (+ optional `soft_limit_min/max`, `velocity_move`, `homing_state`) |
-| `summary` | `pin_count`, `motor_count` |
+| `pin` | `pin`, `mode`, then mode-specific fields (`value`, `invert`, `report_changes`, `report_edges`, `duty`, `triggered`, ...) |
+| `motor` | `motor`, `motor_type`, `enabled`, `moving`, `position`, `homed`, `homing_mode`, `vel_max`, `accel_max`, `enable_priority` (+ optional `hlfb_timeout` [ClearPath], `soft_limit_min/max`, `homing_direction`/`homing_seek_velocity`/`homing_latch_velocity`/`homing_backoff` & `limit_neg_pin`/`limit_pos_pin` [limit_switch], `estop_pin`/`estop_decel`, `velocity_move`, `homing_state`) |
+| `summary` | `pin_count`, `motor_count`, `motor_clock` |
 
 ---
 
@@ -404,6 +405,9 @@ Set the global motor step clock rate. Affects all motors.
 -> set_motor_clock rate=normal
 <- ok rate=normal
 ```
+
+The applied rate is reported back in the [`get_status`](#get_status) summary row as
+`motor_clock`, so a host can confirm the change took effect (e.g. that it is `low`).
 
 #### configure_estop
 

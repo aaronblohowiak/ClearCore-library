@@ -14,6 +14,7 @@ Controller::Controller(ISerial* serial)
     , m_inputOverflow(false)
     , m_responseBuffer{}
     , m_response(m_responseBuffer, sizeof(m_responseBuffer))
+    , m_motorClockRate(CutterHal::CLOCK_RATE_NORMAL)
     , m_nextSeq(1)
     , m_maxSeenSeq(0)
     , m_seenAnySeq(false)
@@ -1103,6 +1104,16 @@ static const char* HomingModeName(HomingMode mode) {
     }
 }
 
+// Helper to convert a motor clock rate value to its protocol string
+static const char* MotorClockRateName(uint8_t rate) {
+    switch (rate) {
+        case CutterHal::CLOCK_RATE_LOW:    return "low";
+        case CutterHal::CLOCK_RATE_NORMAL: return "normal";
+        case CutterHal::CLOCK_RATE_HIGH:   return "high";
+        default:                           return "unknown";
+    }
+}
+
 void Controller::CmdGetStatus(const ParsedCommand& cmd) {
     (void)cmd;  // User-supplied params not needed for response
     // Count configured pins
@@ -1138,6 +1149,9 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
                 bool val = pin.digital_in.invert ? !raw_val : raw_val;
                 m_response.Param("value", val);
                 m_response.Param("invert", pin.digital_in.invert);
+                if (pin.digital_in.report_changes) {
+                    m_response.Param("report_changes", true);
+                }
                 if (pin.digital_in.report_edges != EdgeMode::NONE) {
                     const char* edge_str = "none";
                     switch (pin.digital_in.report_edges) {
@@ -1212,11 +1226,39 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
         m_response.Param("homing_mode", HomingModeName(motor.homing_mode));
         m_response.Param("vel_max", motor.vel_max);
         m_response.Param("accel_max", motor.accel_max);
+        m_response.Param("enable_priority", static_cast<int32_t>(motor.enable_priority));
+
+        // HLFB timeout only applies to ClearPath/SDSK (servo readiness).
+        if (motor.type == MotorType::CLEARPATH) {
+            m_response.Param("hlfb_timeout", motor.hlfb_timeout_ms);
+        }
 
         // Add soft limit info if enabled
         if (motor.soft_limits_enabled) {
             m_response.Param("soft_limit_min", motor.soft_limit_min);
             m_response.Param("soft_limit_max", motor.soft_limit_max);
+        }
+
+        // Limit-switch homing configuration (only meaningful in that mode).
+        if (motor.homing_mode == HomingMode::LIMIT_SWITCH) {
+            m_response.Param("homing_direction", motor.homing_direction);
+            m_response.Param("homing_seek_velocity", motor.homing_seek_velocity);
+            m_response.Param("homing_latch_velocity", motor.homing_latch_velocity);
+            m_response.Param("homing_backoff", motor.homing_backoff_distance);
+            if (motor.limit_neg_pin != CutterHal::PIN_INVALID) {
+                m_response.Param("limit_neg_pin", static_cast<int32_t>(motor.limit_neg_pin));
+            }
+            if (motor.limit_pos_pin != CutterHal::PIN_INVALID) {
+                m_response.Param("limit_pos_pin", static_cast<int32_t>(motor.limit_pos_pin));
+            }
+        }
+
+        // Sensor E-Stop config (set via configure_estop).
+        if (motor.estop_pin != CutterHal::PIN_INVALID) {
+            m_response.Param("estop_pin", static_cast<int32_t>(motor.estop_pin));
+            if (motor.estop_decel > 0) {
+                m_response.Param("estop_decel", motor.estop_decel);
+            }
         }
 
         // Add velocity move indicator
@@ -1246,6 +1288,9 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
     m_response.Status("summary", m_currentCommandId);
     m_response.Param("pin_count", static_cast<int32_t>(pin_count));
     m_response.Param("motor_count", static_cast<int32_t>(motor_count));
+    // Board-global motor step clock rate, so a host can confirm set_motor_clock
+    // took effect (e.g. verify it is "low").
+    m_response.Param("motor_clock", MotorClockRateName(m_motorClockRate));
     SendResponse();
 }
 

@@ -115,7 +115,7 @@ When a host opens the serial port, before any command is sent, the controller
 emits one `debug` line:
 
 ```
-debug message="cutter ready" protocol=2.0 version=2.0.0 device_id=12648430
+debug message="cutter ready" protocol=2.1 version=2.1.0 device_id=12648430
 ```
 
 - `protocol` / `version` equal what the `version` command returns. Both are SemVer

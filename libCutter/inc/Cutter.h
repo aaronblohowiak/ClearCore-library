@@ -282,6 +282,11 @@ struct MotorSlot {
     uint8_t last_hlfb_state;        ///< For detecting HLFB changes
     uint32_t enable_start_time;     ///< When motor was enabled (for HLFB timeout)
     uint32_t hlfb_timeout_ms;       ///< Max time to wait for HLFB after enable
+
+    // Sensor E-Stop configuration (set via configure_estop). Retained so
+    // get_status can report it; PIN_INVALID = no E-Stop pin configured.
+    uint8_t estop_pin;              ///< E-Stop input pin (PIN_INVALID = none)
+    uint32_t estop_decel;           ///< E-Stop decel rate (steps/sec^2, 0 = HAL default)
 };
 
 /**
@@ -475,6 +480,22 @@ public:
     **/
     void StartNextHoming();
 
+    /**
+        \brief Get the motor step clock rate the firmware has applied
+
+        Board-global setting (CLOCK_RATE_LOW/NORMAL/HIGH). Reported by
+        get_status so a host can confirm a set_motor_clock took effect.
+    **/
+    uint8_t GetMotorClockRate() const { return m_motorClockRate; }
+
+    /**
+        \brief Record the motor step clock rate applied to the hardware
+
+        Called by set_motor_clock after pushing the rate to the HAL so the
+        value can be reported back via get_status. Board-global.
+    **/
+    void SetMotorClockRate(uint8_t rate) { m_motorClockRate = rate; }
+
 private:
     // Serial communication
     ISerial* m_serial;
@@ -509,6 +530,11 @@ private:
     void DispatchCommand(const ParsedCommand& cmd);
     void CheckPins();
     void CheckMotors();
+
+    // Motor step clock rate (board-global), last value applied via
+    // set_motor_clock. Reported by get_status. Defaults to the hardware
+    // power-on rate (CLOCK_RATE_NORMAL).
+    uint8_t m_motorClockRate;
 
     // Sequence tracking
     uint32_t m_nextSeq;             ///< Next internal seq to assign

@@ -86,6 +86,29 @@ TEST_F(PinTest, ConfigureDigitalInWithReportChanges) {
     EXPECT_TRUE(pin->digital_in.report_changes);
 }
 
+// get_status reports report_changes when on, and omits it when off.
+TEST_F(PinTest, GetStatusReportsDigitalInReportChanges) {
+    serial.SendLine("configure_digital_in pin=6 report_changes=1");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("type=pin"));
+    EXPECT_TRUE(serial.HasOutput("report_changes=1"));
+}
+
+TEST_F(PinTest, GetStatusOmitsReportChangesWhenOff) {
+    serial.SendLine("configure_digital_in pin=6");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("type=pin"));
+    EXPECT_FALSE(serial.HasOutput("report_changes"));
+}
+
 TEST_F(PinTest, ConfigureDigitalInInvalidPin) {
     serial.SendLine("configure_digital_in pin=99");
     ctrl->Update();

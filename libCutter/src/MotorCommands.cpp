@@ -172,6 +172,10 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     // No move_until sensor stop condition is active until a move_until command.
     slot->stop_sensor_pin = CutterHal::PIN_INVALID;
 
+    // No sensor E-Stop until configure_estop.
+    slot->estop_pin = CutterHal::PIN_INVALID;
+    slot->estop_decel = 0;
+
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
 
@@ -323,6 +327,10 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
 
     // No move_until sensor stop condition is active until a move_until command.
     slot->stop_sensor_pin = CutterHal::PIN_INVALID;
+
+    // No sensor E-Stop until configure_estop.
+    slot->estop_pin = CutterHal::PIN_INVALID;
+    slot->estop_decel = 0;
 
     // Set motor parameters in HAL
     CutterHal::SetMotorParams(slot->motor_index, slot->vel_max, slot->accel_max);
@@ -766,6 +774,8 @@ static void CmdSetMotorClock(Controller* ctrl, const ParsedCommand& cmd) {
     }
 
     CutterHal::SetMotorClockRate(rate);
+    // Remember the applied rate so get_status can report it (board-global).
+    ctrl->SetMotorClockRate(rate);
 
     const CommandId& id = ctrl->GetCurrentCommandId();
     ctrl->Response().Ok(id);
@@ -819,18 +829,23 @@ static void CmdConfigureEStop(Controller* ctrl, const ParsedCommand& cmd) {
     // Optional decel rate
     int32_t decel = cmd.GetIntOr("decel", 0);  // 0 = use default
 
-    // Apply E-Stop configuration
+    // Apply E-Stop configuration. Also retain it on the motor slot(s) so
+    // get_status can report which pin / decel is in effect.
     if (all_motors) {
         for (size_t i = 0; i < NUM_MOTORS; i++) {
             CutterHal::SetMotorEStop(static_cast<uint8_t>(i), static_cast<uint8_t>(pin));
+            ctrl->GetMotor(static_cast<uint8_t>(i))->estop_pin = static_cast<uint8_t>(pin);
             if (decel > 0) {
                 CutterHal::SetMotorEStopDecel(static_cast<uint8_t>(i), static_cast<uint32_t>(decel));
+                ctrl->GetMotor(static_cast<uint8_t>(i))->estop_decel = static_cast<uint32_t>(decel);
             }
         }
     } else {
         CutterHal::SetMotorEStop(static_cast<uint8_t>(motor_num), static_cast<uint8_t>(pin));
+        ctrl->GetMotor(static_cast<uint8_t>(motor_num))->estop_pin = static_cast<uint8_t>(pin);
         if (decel > 0) {
             CutterHal::SetMotorEStopDecel(static_cast<uint8_t>(motor_num), static_cast<uint32_t>(decel));
+            ctrl->GetMotor(static_cast<uint8_t>(motor_num))->estop_decel = static_cast<uint32_t>(decel);
         }
     }
 

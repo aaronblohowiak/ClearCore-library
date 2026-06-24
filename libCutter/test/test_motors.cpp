@@ -742,6 +742,129 @@ TEST_F(MotorTest, SetMotorClockMissingRate) {
     EXPECT_TRUE(serial.HasOutput("Missing rate parameter"));
 }
 
+// get_status reports the board-global motor clock rate in its summary row,
+// defaulting to "normal" before any set_motor_clock.
+TEST_F(MotorTest, GetStatusReportsDefaultMotorClock) {
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("type=summary"));
+    EXPECT_TRUE(serial.HasOutput("motor_clock=normal"));
+}
+
+// After set_motor_clock the new rate is visible via get_status, so a host can
+// confirm e.g. "rate=low" actually took effect.
+TEST_F(MotorTest, GetStatusReportsMotorClockAfterSet) {
+    serial.SendLine("set_motor_clock rate=low");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("type=summary"));
+    EXPECT_TRUE(serial.HasOutput("motor_clock=low"));
+    EXPECT_FALSE(serial.HasOutput("motor_clock=normal"));
+}
+
+// get_status motor row always reports enable_priority.
+TEST_F(MotorTest, GetStatusMotorIncludesEnablePriority) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=none enable_priority=2");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("type=motor"));
+    EXPECT_TRUE(serial.HasOutput("enable_priority=2"));
+}
+
+// hlfb_timeout is reported for ClearPath/SDSK motors...
+TEST_F(MotorTest, GetStatusClearPathIncludesHlfbTimeout) {
+    serial.SendLine("configure_sdsk motor=0 homing_mode=none hlfb_timeout=1234");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("motor_type=clearpath"));
+    EXPECT_TRUE(serial.HasOutput("hlfb_timeout=1234"));
+}
+
+// ...but not for generic steppers (HLFB doesn't apply).
+TEST_F(MotorTest, GetStatusStepperOmitsHlfbTimeout) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("motor_type=stepper"));
+    EXPECT_FALSE(serial.HasOutput("hlfb_timeout"));
+}
+
+// Limit-switch homing config round-trips through get_status.
+TEST_F(MotorTest, GetStatusReportsLimitSwitchHomingConfig) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=limit_switch "
+                    "homing_direction=1 limit_pos_pin=7 homing_seek_velocity=4000 "
+                    "homing_latch_velocity=300 homing_backoff=150");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("homing_direction=1"));
+    EXPECT_TRUE(serial.HasOutput("homing_seek_velocity=4000"));
+    EXPECT_TRUE(serial.HasOutput("homing_latch_velocity=300"));
+    EXPECT_TRUE(serial.HasOutput("homing_backoff=150"));
+    EXPECT_TRUE(serial.HasOutput("limit_pos_pin=7"));
+}
+
+// Homing config is omitted when homing_mode=none.
+TEST_F(MotorTest, GetStatusOmitsHomingConfigWhenModeNone) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_FALSE(serial.HasOutput("homing_direction"));
+    EXPECT_FALSE(serial.HasOutput("homing_seek_velocity"));
+}
+
+// E-Stop config (pin + decel) round-trips through get_status.
+TEST_F(MotorTest, GetStatusReportsEStopConfig) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
+    ctrl->Update();
+    serial.SendLine("configure_estop motor=0 pin=6 decel=5000");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("estop_pin=6"));
+    EXPECT_TRUE(serial.HasOutput("estop_decel=5000"));
+}
+
+// No estop_pin field until an E-Stop is configured.
+TEST_F(MotorTest, GetStatusOmitsEStopWhenUnset) {
+    serial.SendLine("configure_stepper motor=0 homing_mode=none");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("type=motor"));
+    EXPECT_FALSE(serial.HasOutput("estop_pin"));
+}
+
 // === E-Stop Tests ===
 
 TEST_F(MotorTest, ConfigureEStopSingleMotor) {
