@@ -564,12 +564,18 @@ void UsbManager::RxCopyToRingBuf() {
         else {
             m_inTail = (tail + countTilWrap) & (sizeof(m_bufferIn) - 1);
         }
+    }
 
-        // If all of the available input data has been copied into the
-        // ring buffer, read more input data from the USB device
-        if (!m_readBufAvail) {
-            cdcdf_acm_read(m_usbReadBuf, sizeof(m_usbReadBuf));
-        }
+    // If there is no input data staged, read more input data from the USB
+    // device. This must be checked on every call, not just after a copy:
+    // a zero-length packet (which the Host sends to terminate a write whose
+    // length is a multiple of the endpoint size) completes the read transfer
+    // with a count of zero, so there is nothing to copy and no transfer left
+    // armed. Skipping the read here would wedge Rx until the port is
+    // reopened. Redundant calls while a transfer is already armed return
+    // USB_BUSY without side effects.
+    if (!m_readBufAvail) {
+        cdcdf_acm_read(m_usbReadBuf, sizeof(m_usbReadBuf));
     }
     __enable_irq();
 }
