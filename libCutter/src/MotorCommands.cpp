@@ -597,8 +597,10 @@ static void CmdMoveVelocity(Controller* ctrl, const ParsedCommand& cmd) {
 // this is not a fault - no alert is latched and no clear_alerts is needed. The
 // motor's configured soft limits act as the travel bound: if the sensor never
 // trips, the existing velocity soft-limit monitor stops the move and emits a
-// "soft_limit" event (the "no item found" outcome). Used to lower a suction
-// head until the vacuum sensor reports suction has formed.
+// "soft_limit" event (the "no item found" outcome). Optional max_steps caps the
+// search depth relative to the start position: reaching it stops the move with
+// a "done" event. Used to lower a suction head until the vacuum sensor reports
+// suction has formed.
 static void CmdMoveUntil(Controller* ctrl, const ParsedCommand& cmd) {
     if (!RequireReady(ctrl, cmd)) return;
 
@@ -653,11 +655,37 @@ static void CmdMoveUntil(Controller* ctrl, const ParsedCommand& cmd) {
         return;
     }
 
+    // Optional search depth: stop after max_steps of travel even if the sensor
+    // never trips. Tightens the soft-limit bound; it can't replace it.
+    int32_t max_steps = 0;
+    bool has_max_steps = cmd.GetInt("max_steps", &max_steps);
+    if (has_max_steps && max_steps < 1) {
+        SendError(ctrl, cmd, ErrorCode::INVALID_PARAM, "max_steps must be >= 1");
+        return;
+    }
+
     // Optional acceleration override (must be <= motor max)
     int32_t accel = cmd.GetIntOr("accel", slot->accel_max);
     if (accel > slot->accel_max) {
         SendError(ctrl, cmd, ErrorCode::EXCEEDS_LIMIT, "accel exceeds motor accel_max");
         return;
+    }
+
+    // Arm the depth bound only if it is reached before the soft limit in the
+    // direction of travel. The soft limit trips at pos < soft_min (or
+    // > soft_max) and the bound at |pos - start| >= max_steps, so a bound
+    // target exactly on the soft limit is reached first; one beyond it never is.
+    // Without this, one Update() could see both crossed and report the wrong
+    // one. A zero velocity never travels, so its bound is moot either way.
+    int32_t start_pos = CutterHal::GetMotorPosition(slot->motor_index);
+    uint32_t max_travel = 0;
+    if (has_max_steps) {
+        int64_t target = static_cast<int64_t>(start_pos) +
+                         (velocity < 0 ? -static_cast<int64_t>(max_steps)
+                                       : static_cast<int64_t>(max_steps));
+        if (target >= slot->soft_limit_min && target <= slot->soft_limit_max) {
+            max_travel = static_cast<uint32_t>(max_steps);
+        }
     }
 
     // Apply per-move acceleration
@@ -681,6 +709,8 @@ static void CmdMoveUntil(Controller* ctrl, const ParsedCommand& cmd) {
     slot->move_id = id;
     slot->stop_sensor_pin = static_cast<uint8_t>(until_pin);
     slot->stop_sensor_value = (until_value != 0);
+    slot->stop_start_pos = start_pos;
+    slot->stop_max_travel = max_travel;
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {

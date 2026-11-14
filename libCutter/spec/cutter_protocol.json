@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Cutter Protocol Specification",
-  "version": "2.1.0",
-  "protocol_version": "2.1",
+  "version": "2.2.0",
+  "protocol_version": "2.2",
   "_version_note": "version (firmware) and protocol_version are SemVer STRINGS, compared as strings - never parsed as numbers/floats. On the wire they appear unquoted only because they contain no spaces.",
   "changelog": {
+    "2.2": "Backward-compatible addition over 2.1: move_until takes an optional max_steps search depth. If the sensor has not tripped after max_steps of travel from the start position, the move stops and emits 'done' (position = where it stopped). Soft limits remain required and still bound the move; max_steps only tightens them. A 2.1 device ignores the unknown param and searches to the soft limit, so hosts relying on max_steps should require protocol >= 2.2.",
     "2.1": "Backward-compatible additions over 2.0: get_status is now a complete dump of settable state. The summary row carries 'motor_clock' (the board-global motor step clock rate) so a host can confirm a set_motor_clock took effect. The motor row adds enable_priority, hlfb_timeout (ClearPath/SDSK), the limit_switch homing config (homing_direction/seek_velocity/latch_velocity/backoff, limit_neg_pin/limit_pos_pin), and the configure_estop pin/decel (estop_pin/estop_decel); the digital_in pin row adds report_changes. All are optional fields, present only when relevant. Hosts speaking 2.0 remain compatible.",
     "2.0": "BREAKING: strict seq lockstep. A supplied 'seq' must now exactly equal the device's next internal seq; one that's ahead is rejected with error 107 (SEQ_MISMATCH), whose 'expected' carries the seq to resync to. Previously any increasing host-chosen seq was accepted. seq remains OPTIONAL — hosts that omit it are unaffected — but hosts that send it must track the device counter (query get_next_seq to resync). Hosts speaking 1.x that supplied arbitrary seq values are NOT compatible.",
     "1.1": "Backward-compatible additions over 1.0: move_until command + sensor_stop event; debug_wait command + error 308 (DEBUG_WAIT_TIMEOUT); t_ms uptime field appended to every emitted line. Hosts speaking 1.0 remain compatible.",
@@ -269,17 +270,18 @@
     },
 
     "move_until": {
-      "description": "Velocity move until a non-limit sensor input reaches a target level, then stop and report position. Not a fault: no alert latched. Soft limits bound the travel; requires soft_limits enabled on the motor and until_pin configured as a digital input.",
+      "description": "Velocity move until a non-limit sensor input reaches a target level, then stop and report position. Not a fault: no alert latched. Soft limits bound the travel; requires soft_limits enabled on the motor and until_pin configured as a digital input. Optional max_steps caps the search depth relative to the start position: reaching it stops the move with a 'done' event. It applies only when reached before the soft limit in the direction of travel; otherwise the soft limit governs.",
       "valid_states": ["READY", "WORKING"],
       "params": {
         "motor": { "type": "motor_index", "required": true },
         "velocity": { "type": "int32", "required": true },
         "until_pin": { "type": "pin_index", "required": true },
         "until_value": { "type": "bool", "required": true },
+        "max_steps": { "type": "int32", "min": 1, "required": false },
         "accel": { "type": "int32", "min": 1, "required": false }
       },
       "response_params": ["motor"],
-      "emits_events": ["sensor_stop", "soft_limit", "alert", "limit"]
+      "emits_events": ["sensor_stop", "done", "soft_limit", "alert", "limit"]
     },
 
     "stop": {
@@ -520,7 +522,7 @@
 
   "events": {
     "done": {
-      "description": "Motor move completed",
+      "description": "Motor move completed. For move_until, the max_steps search depth was reached without the sensor tripping.",
       "params": {
         "motor": { "type": "motor_index" },
         "position": { "type": "int32" },

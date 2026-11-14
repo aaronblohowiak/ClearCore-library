@@ -34,16 +34,23 @@ TEST_F(IntegrationTest, ConnectionBannerEmittedOnPortOpenWithoutInput) {
     EXPECT_FALSE(serial.HasOutput("cutter ready"));
     EXPECT_EQ(ctrl->GetState(), State::UNCONNECTED);
 
-    // Host opens the port (USB DTR). The banner is emitted on the next Update
+    // Host opens the port (USB DTR). The banner follows BANNER_SETTLE_MS later
     // with NO command typed - it is connection-driven, not input-driven.
     serial.SetPortOpen(true);
     ctrl->Update();
+    EXPECT_FALSE(serial.HasOutput("cutter ready"));  // still settling
+    ADVANCE_TIME(BANNER_SETTLE_MS - 1);
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasOutput("cutter ready"));
+    ADVANCE_TIME(1);
+    ctrl->Update();
     EXPECT_TRUE(serial.HasOutput(
-        "debug message=\"cutter ready\" protocol=2.1 version=2.1.0 device_id=12648430"));
+        "debug message=\"cutter ready\" protocol=2.2 version=2.2.0 device_id=12648430"));
     EXPECT_EQ(ctrl->GetState(), State::CONNECTED);
 
     // Banner is emitted once per connection, not on every Update.
     serial.ClearOutput();
+    ADVANCE_TIME(BANNER_SETTLE_MS);
     ctrl->Update();
     EXPECT_FALSE(serial.HasOutput("cutter ready"));
 
@@ -52,7 +59,49 @@ TEST_F(IntegrationTest, ConnectionBannerEmittedOnPortOpenWithoutInput) {
     ctrl->Update();
     serial.SetPortOpen(true);
     ctrl->Update();
+    ADVANCE_TIME(BANNER_SETTLE_MS);
+    ctrl->Update();
     EXPECT_TRUE(serial.HasOutput("cutter ready"));
+}
+
+TEST_F(IntegrationTest, ConnectionBannerCanceledIfPortClosesWhileSettling) {
+    serial.SetPortOpen(false);
+    ctrl->Update();
+    serial.SetPortOpen(true);
+    ctrl->Update();
+    serial.SetPortOpen(false);
+    ctrl->Update();
+    ADVANCE_TIME(BANNER_SETTLE_MS);
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasOutput("cutter ready"));
+}
+
+TEST_F(IntegrationTest, ReconnectCommandDuringSettleGetsBannerFirst) {
+    // First connection, fully greeted.
+    serial.SendLine("ping");
+    ctrl->Update();
+    ASSERT_EQ(ctrl->GetState(), State::CONNECTED);
+
+    // Host reconnects and sends a command before the settle time elapses. The
+    // controller is not UNCONNECTED, so only the pending banner can put the
+    // banner ahead of the reply.
+    serial.SetPortOpen(false);
+    ctrl->Update();
+    serial.SetPortOpen(true);
+    serial.ClearOutput();
+    serial.SendLine("ping");
+    ctrl->Update();
+
+    auto lines = serial.GetOutputLines();
+    ASSERT_EQ(lines.size(), 2u);
+    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\"", 0), 0u);
+    EXPECT_EQ(lines[1].rfind("ok", 0), 0u);
+
+    // ...and only once: the settle timer must not send a second banner.
+    serial.ClearOutput();
+    ADVANCE_TIME(BANNER_SETTLE_MS);
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasOutput("cutter ready"));
 }
 
 TEST_F(IntegrationTest, ConnectionBannerPrecedesFirstResponse) {
@@ -63,7 +112,7 @@ TEST_F(IntegrationTest, ConnectionBannerPrecedesFirstResponse) {
     auto lines = serial.GetOutputLines();
     ASSERT_GE(lines.size(), 2u);
     // Starts-with (not exact): every line now also carries a trailing t_ms stamp.
-    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=2.1 version=2.1.0 device_id=12648430", 0), 0u);
+    EXPECT_EQ(lines[0].rfind("debug message=\"cutter ready\" protocol=2.2 version=2.2.0 device_id=12648430", 0), 0u);
     EXPECT_EQ(lines[1].rfind("ok", 0), 0u);  // command response follows
 }
 

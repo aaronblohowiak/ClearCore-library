@@ -49,7 +49,7 @@ Commands are sent as single lines terminated by newline (`\n`). Responses are se
 **Connection banner.** When a host opens the serial port, the controller emits a one-time `debug` banner identifying itself, before any command is sent:
 
 ```
-<- debug message="cutter ready" protocol=2.1 version=2.1.0 device_id=12648430
+<- debug message="cutter ready" protocol=2.2 version=2.2.0 device_id=12648430
 ```
 
 - `protocol` / `version` match the values returned by the `version` command.
@@ -251,7 +251,7 @@ Get firmware and protocol version.
 
 ```
 -> version
-<- ok version=2.1.0 protocol=2.1
+<- ok version=2.2.0 protocol=2.2
 ```
 
 `version` and `protocol` are **SemVer strings**, not numbers. They appear unquoted
@@ -442,7 +442,7 @@ it with `clear_alerts` before further motion.
 | `disable` | Disable motor | `motor` |
 | `move` | Command positional move | `motor`, `steps` or `position` |
 | `move_velocity` | Command velocity move | `motor`, `velocity` |
-| `move_until` | Velocity move until a sensor input trips | `motor`, `velocity`, `until_pin`, `until_value` |
+| `move_until` | Velocity move until a sensor input trips | `motor`, `velocity`, `until_pin`, `until_value`, [`max_steps`] |
 | `stop` | Stop motor | `motor` |
 | `debug_wait` | **Debug-only** blocking wait for a move to finish | none |
 | `home` | Start homing sequence | `motor` |
@@ -573,6 +573,7 @@ command therefore requires `soft_limits` to be enabled on the motor.
 | `velocity` | int | required | Target velocity (signed, steps/sec) - sign sets direction |
 | `until_pin` | int | required | Pin to watch; must be configured as a digital input |
 | `until_value` | int (0/1) | required | Logical level (after the pin's `invert`) that stops the move |
+| `max_steps` | int (>= 1) | none | Search depth: stop after this many steps of travel from the start position (protocol 2.2+) |
 | `accel` | int | motor accel_max | Acceleration to target velocity |
 
 Prerequisites: `until_pin` configured with `configure_digital_in`, and the
@@ -594,6 +595,27 @@ Two terminal outcomes, both carrying the final `position`:
 <- ok seq=2 motor=0
 <- event type=soft_limit motor=0 position=-3000 seq=2
 ```
+
+**Search depth (`max_steps`, protocol 2.2+).** To search no deeper than a set
+distance from the current position, pass `max_steps`. If the sensor has not
+tripped once the motor has travelled that far, the move stops and emits `done`.
+The reported `position` is where it actually stopped, which can pass the bound
+by the distance covered in one controller loop.
+
+```
+# Starting at -1000: search at most 500 steps down
+-> move_until motor=0 velocity=-2000 until_pin=6 until_value=1 max_steps=500 seq=3
+<- ok seq=3 motor=0
+<- event type=done motor=0 position=-1500 seq=3
+```
+
+So a `move_until` ends with one of: `sensor_stop` (found), `done` (searched
+`max_steps` without finding), or `soft_limit` (reached the soft limit without
+finding). `max_steps` only tightens the soft-limit bound. Soft limits are still
+required, and if the soft limit comes before `max_steps` in the direction of
+travel, the move ends with `soft_limit` as before. A sensor that trips on the
+same update as the bound is reported as `sensor_stop`. A 2.1 device ignores
+`max_steps` and searches to the soft limit.
 
 A hardware E-Stop or limit switch during a `move_until` still cancels it with an
 `alert` event, exactly as for any other move.
@@ -914,7 +936,7 @@ Events are sent asynchronously when certain conditions occur. They are distinct 
 
 | Event Type | Description | Parameters |
 |------------|-------------|------------|
-| `done` | Motor move completed | `motor`, `position`, [`epoch`], `seq` |
+| `done` | Motor move completed (for `move_until`: `max_steps` reached without a sensor trip) | `motor`, `position`, [`epoch`], `seq` |
 | `homed` | Motor homing completed | `motor`, [`epoch`], `seq` |
 | `soft_limit` | Velocity move hit soft limit | `motor`, `position`, [`epoch`], `seq` |
 | `sensor_stop` | `move_until` sensor reached its target level (not a fault) | `motor`, `pin`, `position`, [`epoch`], `seq` |

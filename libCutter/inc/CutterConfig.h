@@ -107,13 +107,22 @@ inline bool PinSupports(uint8_t pin, PinCap cap) {
     return PIN_CAPABILITIES[pin] & cap;
 }
 
+// === Connection ===
+
+// After the host opens the port, wait this long before sending the banner. A
+// host can assert DTR slightly before it is actually reading, and a banner
+// sent in that gap can be lost. This replaces the 10 ms sleep that ClearCore's
+// SerialUsb::PortIsOpen() used to impose on every Update() (see
+// CutterUsbSerial.h), applied once per connection instead of every loop.
+constexpr uint32_t BANNER_SETTLE_MS = 10;
+
 // === Protocol Version ===
 
 // Both are SemVer strings, NOT numbers - hosts must compare them as strings,
 // never parse as floats (e.g. "1.10" != "1.1"). They are emitted unquoted only
 // because they contain no spaces. Protocol bumps minor for backward-compatible
 // additions, major for breaking changes.
-constexpr const char* CUTTER_VERSION = "2.1.0";
-constexpr const char* PROTOCOL_VERSION = "2.1";
+constexpr const char* CUTTER_VERSION = "2.2.0";
+constexpr const char* PROTOCOL_VERSION = "2.2";
 
 }  // namespace Cutter

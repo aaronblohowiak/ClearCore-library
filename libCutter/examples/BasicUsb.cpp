@@ -5,15 +5,17 @@
  * This example demonstrates how to use the Cutter library with
  * USB serial communication on ClearCore.
  *
- * ClearCore's ConnectorUsb implements ClearCore::ISerial, which Cutter
- * uses directly - no wrapper needed.
+ * Wrap ConnectorUsb in Cutter::UsbSerial rather than passing it directly:
+ * ConnectorUsb.PortIsOpen() sleeps 10 ms on every call, and Controller checks
+ * it on every Update(), which would cap the main loop at ~100 Hz.
  */
 
 #include "ClearCore.h"
 #include "Cutter.h"
+#include "CutterUsbSerial.h"
 
-// ConnectorUsb already implements ClearCore::ISerial
-Cutter::Controller cutter(&ConnectorUsb);
+Cutter::UsbSerial usbSerial(ConnectorUsb);
+Cutter::Controller cutter(&usbSerial);
 
 int main() {
     // Initialize ClearCore motors in step/direction mode
