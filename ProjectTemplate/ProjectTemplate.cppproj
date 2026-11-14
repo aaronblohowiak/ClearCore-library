@@ -91,7 +91,28 @@
   <Value>NDEBUG</Value>
 </ListValues></armgcccpp.compiler.symbols.DefSymbols>
   <armgcccpp.compiler.directories.DefaultIncludePath>False</armgcccpp.compiler.directories.DefaultIncludePath>
-  <armgcccpp.compiler.directories.IncludePaths><ListValues><Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value><Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value><Value>../../libClearCore/inc</Value><Value>../../LwIP/LwIP/src/include</Value><Value>../../LwIP/LwIP/port/include</Value><Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value></ListValues></armgcccpp.compiler.directories.IncludePaths>
+  <armgcccpp.compiler.directories.IncludePaths><ListValues>
+  <Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value>
+  <Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value>
+  <Value>../../libClearCore/inc</Value>
+  <Value>../../LwIP/LwIP/src/include</Value>
+  <Value>../../LwIP/LwIP/port/include</Value>
+  <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+  <Value>../../libCutter/inc</Value>
+  <Value>../../libClearCore/config</Value>
+  <Value>../../libClearCore/hal/include</Value>
+  <Value>../../libClearCore/hal/utils/include</Value>
+  <Value>../../libClearCore/hpl/core</Value>
+  <Value>../../libClearCore/hpl/gclk</Value>
+  <Value>../../libClearCore/hpl/mclk</Value>
+  <Value>../../libClearCore/hpl/port</Value>
+  <Value>../../libClearCore/hpl/usb</Value>
+  <Value>../../libClearCore/hri</Value>
+  <Value>../../libClearCore/usb</Value>
+  <Value>../../libClearCore/usb/class/cdc</Value>
+  <Value>../../libClearCore/usb/class/cdc/device</Value>
+  <Value>../../libClearCore/usb/device</Value>
+</ListValues></armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
   <armgcccpp.compiler.optimization.PrepareFunctionsForGarbageCollection>True</armgcccpp.compiler.optimization.PrepareFunctionsForGarbageCollection>
   <armgcccpp.compiler.optimization.EnableLongCalls>False</armgcccpp.compiler.optimization.EnableLongCalls>
@@ -140,6 +161,19 @@
   <Value>../../LwIP/LwIP/port/include</Value>
   <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
   <Value>../../libCutter/inc</Value>
+  <Value>../../libClearCore/config</Value>
+  <Value>../../libClearCore/hal/include</Value>
+  <Value>../../libClearCore/hal/utils/include</Value>
+  <Value>../../libClearCore/hpl/core</Value>
+  <Value>../../libClearCore/hpl/gclk</Value>
+  <Value>../../libClearCore/hpl/mclk</Value>
+  <Value>../../libClearCore/hpl/port</Value>
+  <Value>../../libClearCore/hpl/usb</Value>
+  <Value>../../libClearCore/hri</Value>
+  <Value>../../libClearCore/usb</Value>
+  <Value>../../libClearCore/usb/class/cdc</Value>
+  <Value>../../libClearCore/usb/class/cdc/device</Value>
+  <Value>../../libClearCore/usb/device</Value>
 </ListValues></armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
   <armgcccpp.compiler.optimization.PrepareFunctionsForGarbageCollection>True</armgcccpp.compiler.optimization.PrepareFunctionsForGarbageCollection>
@@ -180,6 +214,10 @@
     <Compile Include="..\libCutter\src\CutterHal_ClearCore.cpp">
       <SubType>compile</SubType>
       <Link>CutterHal_ClearCore.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\CutterUsbSerial.cpp">
+      <SubType>compile</SubType>
+      <Link>CutterUsbSerial.cpp</Link>
     </Compile>
     <Compile Include="..\libCutter\src\CutterState.cpp">
       <SubType>compile</SubType>

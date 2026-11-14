@@ -1,7 +1,8 @@
 
-#define CUTTER_PLATFORM_CLEARCORE true
+// CUTTER_PLATFORM_CLEARCORE is defined by the project (Debug and Release).
 #include "ClearCore.h"
 #include "Cutter.h"
+#include "CutterUsbSerial.h"
 
 
 
@@ -11,8 +12,11 @@
  */
 
 
-// ConnectorUsb already implements ClearCore::ISerial
-Cutter::Controller cutter(&ConnectorUsb);
+// Wrap ConnectorUsb rather than passing it directly: ConnectorUsb.PortIsOpen()
+// sleeps 10 ms on every call, and Controller checks it on every Update(),
+// which would cap the main loop at ~100 Hz.
+Cutter::UsbSerial usbSerial(ConnectorUsb);
+Cutter::Controller cutter(&usbSerial);
 
 int main() {
 // Initialize ClearCore motors in step/direction mode
