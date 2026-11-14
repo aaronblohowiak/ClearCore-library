@@ -711,6 +711,40 @@ void Controller::CheckMotors() {
             }
         }
 
+        // move_until search depth (max_steps): the sensor has not tripped
+        // (checked just above, so a trip on the final step still reports
+        // sensor_stop) and the motor has travelled max_steps from where the
+        // move_until was accepted. Stop and report "done" - the search ran to
+        // its depth without finding anything. CmdMoveUntil arms this only when
+        // it is reached before the soft limit, so it never masks a soft_limit.
+        if (motor.moving && motor.stop_sensor_pin != CutterHal::PIN_INVALID &&
+            motor.stop_max_travel != 0) {
+            int32_t pos = CutterHal::GetMotorPosition(motor.motor_index);
+            int64_t travel = static_cast<int64_t>(pos) - motor.stop_start_pos;
+            if (travel < 0) travel = -travel;
+            if (travel >= static_cast<int64_t>(motor.stop_max_travel)) {
+                CutterHal::StopMotor(motor.motor_index, true);
+                motor.moving = false;
+                motor.stop_sensor_pin = CutterHal::PIN_INVALID;
+                m_response.Event("done", motor.move_id)
+                    .Param("motor", static_cast<int32_t>(motor.motor_index))
+                    .Param("position", pos);
+                SendResponse();
+
+                bool any_moving = false;
+                for (size_t j = 0; j < NUM_MOTORS; j++) {
+                    if (m_motors[j].moving) {
+                        any_moving = true;
+                        break;
+                    }
+                }
+                if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+                    m_stateMachine.TransitionTo(State::READY);
+                }
+                continue;  // Skip the remaining checks for this motor
+            }
+        }
+
         // Check soft limits for velocity moves. Skip during an active homing
         // sequence: the position counter is not yet referenced (zero is only set
         // when homing completes) and homing deliberately drives into the limit,

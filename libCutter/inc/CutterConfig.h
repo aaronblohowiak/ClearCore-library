@@ -122,7 +122,7 @@ constexpr uint32_t BANNER_SETTLE_MS = 10;
 // never parse as floats (e.g. "1.10" != "1.1"). They are emitted unquoted only
 // because they contain no spaces. Protocol bumps minor for backward-compatible
 // additions, major for breaking changes.
-constexpr const char* CUTTER_VERSION = "2.1.0";
-constexpr const char* PROTOCOL_VERSION = "2.1";
+constexpr const char* CUTTER_VERSION = "2.2.0";
+constexpr const char* PROTOCOL_VERSION = "2.2";
 
 }  // namespace Cutter

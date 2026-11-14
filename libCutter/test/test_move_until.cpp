@@ -205,3 +205,119 @@ TEST_F(MoveUntilTest, ConditionDoesNotLeakIntoNextMove) {
     EXPECT_TRUE(ctrl->GetMotor(0)->moving);
     EXPECT_FALSE(serial.HasEvent("sensor_stop"));
 }
+
+// === max_steps: optional search depth relative to the start position ===
+
+TEST_F(MoveUntilTest, MaxStepsStopsWithDoneAtDepth) {
+    g_fake.motor_position[0] = -100;  // search starts part-way down
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=300");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    serial.ClearOutput();
+
+    // One step short of the depth: keep searching.
+    g_fake.motor_position[0] = -399;
+    ctrl->Update();
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+    EXPECT_FALSE(serial.HasEvent("done"));
+
+    // 300 steps travelled from -100: stop and report done, not a fault.
+    g_fake.motor_position[0] = -400;
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasOutput("position=-400"));
+    EXPECT_FALSE(serial.HasEvent("sensor_stop"));
+    EXPECT_FALSE(serial.HasEvent("soft_limit"));
+    EXPECT_FALSE(serial.HasEvent("alert"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_EQ(ctrl->GetMotor(0)->stop_sensor_pin, CutterHal::PIN_INVALID);
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+    EXPECT_EQ(g_fake.motor_velocity[0], 0);  // motor actually stopped
+
+    // Exactly one terminal event.
+    serial.ClearOutput();
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasEvent("done"));
+}
+
+TEST_F(MoveUntilTest, MaxStepsPositiveDirection) {
+    serial.SendLine("move_until motor=0 velocity=500 until_pin=6 until_value=1 max_steps=200");
+    ctrl->Update();
+    serial.ClearOutput();
+    g_fake.motor_position[0] = 250;  // overshoots the bound within one loop
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasOutput("position=250"));  // reports where it actually stopped
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MoveUntilTest, MaxStepsSensorTripOnBoundReportsSensorStop) {
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=300");
+    ctrl->Update();
+    serial.ClearOutput();
+    g_fake.motor_position[0] = -300;
+    SET_PIN(SENSOR_PIN, true);
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasEvent("sensor_stop"));
+    EXPECT_FALSE(serial.HasEvent("done"));
+}
+
+TEST_F(MoveUntilTest, MaxStepsBeyondSoftLimitDefersToSoftLimit) {
+    // Bound target -1500 lies past soft_min -1000: the soft limit comes first.
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=1500");
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->stop_max_travel, 0u);
+    serial.ClearOutput();
+
+    // Even if one loop sees both crossed, the soft limit is what was hit first.
+    g_fake.motor_position[0] = -1600;
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasEvent("soft_limit"));
+    EXPECT_FALSE(serial.HasEvent("done"));
+}
+
+TEST_F(MoveUntilTest, MaxStepsOnSoftLimitBoundaryIsReachedFirst) {
+    // Bound target -1000 == soft_min: the bound trips at -1000, the soft limit
+    // only below it, so the bound is the one reached first.
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=1000");
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->stop_max_travel, 1000u);
+    serial.ClearOutput();
+
+    g_fake.motor_position[0] = -1200;  // both crossed in one loop
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasEvent("done"));
+    EXPECT_FALSE(serial.HasEvent("soft_limit"));
+}
+
+TEST_F(MoveUntilTest, RejectsNonPositiveMaxSteps) {
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=0");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("max_steps"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    serial.ClearOutput();
+
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=-5");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+}
+
+TEST_F(MoveUntilTest, MaxStepsDoesNotLeakIntoNextMoveUntil) {
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1 max_steps=100");
+    ctrl->Update();
+    g_fake.motor_position[0] = -100;
+    ctrl->Update();
+    ASSERT_FALSE(ctrl->GetMotor(0)->moving);
+    serial.ClearOutput();
+
+    // No max_steps this time: only the sensor or the soft limit end it.
+    serial.SendLine("move_until motor=0 velocity=-500 until_pin=6 until_value=1");
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->stop_max_travel, 0u);
+    g_fake.motor_position[0] = -900;
+    ctrl->Update();
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+    EXPECT_FALSE(serial.HasEvent("done"));
+}

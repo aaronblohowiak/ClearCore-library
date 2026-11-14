@@ -268,9 +268,12 @@ struct MotorSlot {
 
     // move_until: stop a velocity move when a (non-limit) sensor input trips.
     // Not a fault: no alert is latched. The motor's soft limits act as the
-    // travel bound. PIN_INVALID = no sensor stop condition active.
+    // travel bound, optionally tightened by max_steps. PIN_INVALID = no sensor
+    // stop condition active (the max_steps fields are only read while active).
     uint8_t stop_sensor_pin;        ///< Pin to watch (PIN_INVALID = none)
     bool stop_sensor_value;         ///< Logical level (post-invert) that stops the move
+    int32_t stop_start_pos;         ///< Position when the move_until was accepted
+    uint32_t stop_max_travel;       ///< Stop with "done" after this many steps (0 = no bound)
 
     // Homing parameters (used when homing_mode=LIMIT_SWITCH for both motor types)
     int32_t homing_direction;       ///< Direction to home: -1 = negative, 1 = positive
