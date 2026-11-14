@@ -26,6 +26,8 @@ Controller::Controller(ISerial* serial)
     , m_currentHomingIndex(0)
     , m_wasPortOpen(false)
     , m_bannerSent(false)
+    , m_bannerPending(false)
+    , m_portOpenedAt(0)
     , m_debugWaitActive(false)
     , m_debugWaitMotor(0xFF)
     , m_debugWaitStart(0)
@@ -53,16 +55,25 @@ void Controller::Update() {
     uint32_t now = CutterHal::Milliseconds();
 
     // Detect a host (re)connection from the serial port-open edge. On USB this
-    // tracks the virtual-port DTR flag, so the banner is sent the moment the
-    // host opens the port - no need for the host to send a byte first.
+    // tracks the virtual-port DTR flag, so the banner is sent without the host
+    // having to send a byte first. This runs every pass, so PortIsOpen() must
+    // not block: on ClearCore, use Cutter::UsbSerial rather than ConnectorUsb.
     bool portOpen = m_serial->PortIsOpen();
     if (portOpen && !m_wasPortOpen) {
-        OnHostConnected();
+        // Hold the banner for BANNER_SETTLE_MS in case the host is not quite
+        // reading yet. A command arriving sooner sends it at once (ProcessInput).
+        m_bannerPending = true;
+        m_portOpenedAt = now;
     } else if (!portOpen && m_wasPortOpen) {
         // Host closed the port; re-arm the banner for the next connection.
         m_bannerSent = false;
+        m_bannerPending = false;
     }
     m_wasPortOpen = portOpen;
+    if (m_bannerPending && (now - m_portOpenedAt) >= BANNER_SETTLE_MS) {
+        m_bannerPending = false;
+        OnHostConnected();
+    }
 
     // Resolve a pending debug_wait (DEBUG-ONLY). While active, new serial input
     // is NOT processed - the move in flight runs to completion first - so a
@@ -114,8 +125,11 @@ void Controller::ProcessInput() {
         // Fallback for transports that do not report a port-open edge (e.g. a
         // terminal that never asserts DTR): treat the first received byte as
         // the connection. OnHostConnected() is idempotent, so this is a no-op
-        // when the port-open edge already greeted the host.
-        if (m_stateMachine.GetState() == State::UNCONNECTED) {
+        // when the port-open edge already greeted the host. A host that sends
+        // during the banner settle time is clearly reading, so send the
+        // pending banner now; it must precede the reply to this command.
+        if (m_bannerPending || m_stateMachine.GetState() == State::UNCONNECTED) {
+            m_bannerPending = false;
             OnHostConnected();
         }
 

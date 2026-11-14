@@ -550,6 +550,8 @@ private:
     uint8_t m_currentHomingIndex;   ///< Index into m_homingOrder for current motor
     bool m_wasPortOpen;             ///< Last observed serial port-open state (for edge detection)
     bool m_bannerSent;              ///< True once the connection banner was sent (re-armed on port close)
+    bool m_bannerPending;           ///< Port opened; banner waits BANNER_SETTLE_MS before sending
+    uint32_t m_portOpenedAt;        ///< When the port-open edge was seen (ms)
 
     // debug_wait state (DEBUG-ONLY blocking-wait mode; see CmdDebugWait).
     // While active, Update() suspends ProcessInput() until the target move

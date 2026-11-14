@@ -287,6 +287,9 @@
     <Compile Include="inc\CutterState.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="inc\CutterUsbSerial.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="src\CommandDispatcher.cpp">
       <SubType>compile</SubType>
     </Compile>
@@ -300,6 +303,9 @@
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="src\CutterState.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\CutterUsbSerial.cpp">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="src\MotorCommands.cpp">
