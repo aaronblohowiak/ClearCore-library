@@ -267,6 +267,7 @@
     <OutputPath>bin\Release\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="inc\**\*.*" />
     <Folder Include="inc\" />
     <Folder Include="src\" />
     <Compile Include="inc\CommandParser.h">

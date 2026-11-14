@@ -86,6 +86,10 @@
   <armgcc.compiler.optimization.EnableLongCalls>False</armgcc.compiler.optimization.EnableLongCalls>
   <armgcc.compiler.warnings.AllWarnings>True</armgcc.compiler.warnings.AllWarnings>
   <armgcc.compiler.miscellaneous.OtherFlags>-std=gnu11 --param max-inline-insns-single=50 -MMD -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16</armgcc.compiler.miscellaneous.OtherFlags>
+  <armgcccpp.compiler.symbols.DefSymbols><ListValues>
+  <Value>CUTTER_PLATFORM_CLEARCORE</Value>
+  <Value>NDEBUG</Value>
+</ListValues></armgcccpp.compiler.symbols.DefSymbols>
   <armgcccpp.compiler.directories.DefaultIncludePath>False</armgcccpp.compiler.directories.DefaultIncludePath>
   <armgcccpp.compiler.directories.IncludePaths><ListValues><Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value><Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value><Value>../../libClearCore/inc</Value><Value>../../LwIP/LwIP/src/include</Value><Value>../../LwIP/LwIP/port/include</Value><Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value></ListValues></armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
@@ -103,7 +107,6 @@
   <armgcccpp.preprocessingassembler.general.DefaultIncludePath>False</armgcccpp.preprocessingassembler.general.DefaultIncludePath>
   <armgcccpp.preprocessingassembler.general.IncludePaths><ListValues><Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value><Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value><Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value></ListValues></armgcccpp.preprocessingassembler.general.IncludePaths>
   <armgcc.compiler.symbols.DefSymbols><ListValues><Value>NDEBUG</Value></ListValues></armgcc.compiler.symbols.DefSymbols>
-  <armgcccpp.compiler.symbols.DefSymbols><ListValues><Value>NDEBUG</Value></ListValues></armgcccpp.compiler.symbols.DefSymbols>
 </ArmGccCpp>
     </ToolchainSettings>
     <PostBuildEvent>"$(SolutionDir)\..\Tools\uf2-builder\Release\uf2-builder.exe" "$(OutputDirectory)\$(OutputFileName).bin" "$(OutputDirectory)\$(OutputFileName).uf2"</PostBuildEvent>
@@ -124,8 +127,20 @@
   <armgcc.compiler.optimization.EnableLongCalls>False</armgcc.compiler.optimization.EnableLongCalls>
   <armgcc.compiler.warnings.AllWarnings>True</armgcc.compiler.warnings.AllWarnings>
   <armgcc.compiler.miscellaneous.OtherFlags>-std=gnu11 --param max-inline-insns-single=50 -MMD -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16</armgcc.compiler.miscellaneous.OtherFlags>
+  <armgcccpp.compiler.symbols.DefSymbols><ListValues>
+  <Value>CUTTER_PLATFORM_CLEARCORE</Value>
+  <Value>DEBUG</Value>
+</ListValues></armgcccpp.compiler.symbols.DefSymbols>
   <armgcccpp.compiler.directories.DefaultIncludePath>False</armgcccpp.compiler.directories.DefaultIncludePath>
-  <armgcccpp.compiler.directories.IncludePaths><ListValues><Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value><Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value><Value>../../libClearCore/inc</Value><Value>../../LwIP/LwIP/src/include</Value><Value>../../LwIP/LwIP/port/include</Value><Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value></ListValues></armgcccpp.compiler.directories.IncludePaths>
+  <armgcccpp.compiler.directories.IncludePaths><ListValues>
+  <Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value>
+  <Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value>
+  <Value>../../libClearCore/inc</Value>
+  <Value>../../LwIP/LwIP/src/include</Value>
+  <Value>../../LwIP/LwIP/port/include</Value>
+  <Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value>
+  <Value>../../libCutter/inc</Value>
+</ListValues></armgcccpp.compiler.directories.IncludePaths>
   <armgcccpp.compiler.optimization.level>Optimize most (-O3)</armgcccpp.compiler.optimization.level>
   <armgcccpp.compiler.optimization.PrepareFunctionsForGarbageCollection>True</armgcccpp.compiler.optimization.PrepareFunctionsForGarbageCollection>
   <armgcccpp.compiler.optimization.EnableLongCalls>False</armgcccpp.compiler.optimization.EnableLongCalls>
@@ -142,7 +157,6 @@
   <armgcccpp.preprocessingassembler.general.IncludePaths><ListValues><Value>%24(PackRepoDir)\atmel\SAME53_DFP\1.1.118\include</Value><Value>%24(PackRepoDir)\arm\CMSIS\4.5.0\CMSIS\Include\</Value><Value>%24(PackRepoDir)\arm\CMSIS\5.4.0\CMSIS\Core\Include\</Value></ListValues></armgcccpp.preprocessingassembler.general.IncludePaths>
   <armgcc.compiler.symbols.DefSymbols><ListValues><Value>DEBUG</Value></ListValues></armgcc.compiler.symbols.DefSymbols>
   <armgcc.compiler.optimization.DebugLevel>Maximum (-g3)</armgcc.compiler.optimization.DebugLevel>
-  <armgcccpp.compiler.symbols.DefSymbols><ListValues><Value>DEBUG</Value></ListValues></armgcccpp.compiler.symbols.DefSymbols>
   <armgcccpp.compiler.optimization.DebugLevel>Default (-g2)</armgcccpp.compiler.optimization.DebugLevel>
   <armgcccpp.assembler.debugging.DebugLevel>Default (-g)</armgcccpp.assembler.debugging.DebugLevel>
   <armgcccpp.preprocessingassembler.debugging.DebugLevel>Default (-Wa,-g)</armgcccpp.preprocessingassembler.debugging.DebugLevel>
@@ -151,6 +165,38 @@
     <PostBuildEvent>"$(SolutionDir)\..\Tools\uf2-builder\Release\uf2-builder.exe" "$(OutputDirectory)\$(OutputFileName).bin" "$(OutputDirectory)\$(OutputFileName).uf2"</PostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\libCutter\src\CommandDispatcher.cpp">
+      <SubType>compile</SubType>
+      <Link>CommandDispatcher.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\CommandParser.cpp">
+      <SubType>compile</SubType>
+      <Link>CommandParser.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\Cutter.cpp">
+      <SubType>compile</SubType>
+      <Link>Cutter.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\CutterHal_ClearCore.cpp">
+      <SubType>compile</SubType>
+      <Link>CutterHal_ClearCore.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\CutterState.cpp">
+      <SubType>compile</SubType>
+      <Link>CutterState.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\MotorCommands.cpp">
+      <SubType>compile</SubType>
+      <Link>MotorCommands.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\PinCommands.cpp">
+      <SubType>compile</SubType>
+      <Link>PinCommands.cpp</Link>
+    </Compile>
+    <Compile Include="..\libCutter\src\ResponseWriter.cpp">
+      <SubType>compile</SubType>
+      <Link>ResponseWriter.cpp</Link>
+    </Compile>
     <Compile Include="Device_Startup\flash_with_bootloader.ld">
       <SubType>compile</SubType>
     </Compile>
