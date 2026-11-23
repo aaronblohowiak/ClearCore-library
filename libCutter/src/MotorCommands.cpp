@@ -923,16 +923,31 @@ static void CmdClearAlerts(Controller* ctrl, const ParsedCommand& cmd) {
 // === Homing Commands ===
 
 // Start homing sequence for a motor (called from enable_all and home command)
-// Only called when homing_mode is LIMIT_SWITCH
-void StartHoming(MotorSlot* slot, const CommandId& id) {
+// Only called when homing_mode is LIMIT_SWITCH. Both stepper and SDSK use the
+// same limit switch homing.
+//
+// Returns false, leaving the slot untouched, if the hardware rejected the seek
+// move and nothing started (e.g. an alert is still latched). A seek rejected
+// because the motor is already on the homing switch is not a failure: ClearCore
+// latches that limit's alert when it rejects the move, so SEEKING proceeds
+// straight to releasing.
+bool StartHoming(MotorSlot* slot, const CommandId& id) {
+    const uint8_t m = slot->motor_index;
+    int32_t velocity = slot->homing_seek_velocity * slot->homing_direction;
+    if (!CutterHal::MoveVelocity(m, velocity)) {
+        bool on_switch = (slot->homing_direction < 0)
+            ? CutterHal::InNegLimit(m)
+            : CutterHal::InPosLimit(m);
+        if (!on_switch) {
+            return false;
+        }
+    }
+
     slot->moving = true;
     slot->move_id = id;
     slot->homed = false;
-
-    // Both stepper and SDSK use same limit switch homing when homing_mode=LIMIT_SWITCH
     slot->homing_state = HomingState::SEEKING;
-    int32_t velocity = slot->homing_seek_velocity * slot->homing_direction;
-    CutterHal::MoveVelocity(slot->motor_index, velocity);
+    return true;
 }
 
 static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
@@ -961,7 +976,11 @@ static void CmdHome(Controller* ctrl, const ParsedCommand& cmd) {
 
     // Start homing sequence
     const CommandId& id = ctrl->GetCurrentCommandId();
-    StartHoming(slot, id);
+    if (!StartHoming(slot, id)) {
+        SendError(ctrl, cmd, ErrorCode::MOVE_REJECTED,
+                  "Homing move rejected: clear alerts and retry");
+        return;
+    }
 
     // Transition to WORKING
     if (ctrl->GetState() == State::READY) {
@@ -1071,6 +1090,18 @@ static void CompleteHoming(Controller* ctrl, MotorSlot& motor) {
 // motor auto-stops (and latches an alert) whenever the limit asserts during a
 // move. SEEKING/LATCHING detect contact via the latched alert; RELEASING watches
 // the live limit input so it can stop the instant the switch clears.
+//
+// After contact, SEEKING and LATCHING wait for the motor to come to rest before
+// clearing the alert and commanding the next move. ClearCore latches the alert
+// on the first tick the switch is active, but only acts on the limit (and stops
+// the motor) on a tick that emits a step - at low homing speeds, several ticks
+// later. A move commanded in that gap is overridden by ClearCore's own limit
+// stop when it does act, parking the motor on the switch. Once StepsComplete,
+// ClearCore has handled the limit and nothing is moving toward the switch, so
+// the alert also cannot re-latch after it is cleared.
+//
+// A homing move the hardware rejects aborts homing with an error event rather
+// than leaving the state machine waiting for motion that never happens.
 static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
     const uint8_t m = motor.motor_index;
     const bool toward_neg = (motor.homing_direction < 0);
@@ -1090,12 +1121,16 @@ static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
 
     switch (motor.homing_state) {
         case HomingState::SEEKING:
-            // Fast approach; motor auto-stops when the limit trips.
-            if (limit_triggered) {
+            // Fast approach; motor auto-stops when the limit trips. Reverse
+            // only once it is at rest (see above).
+            if (limit_triggered && CutterHal::StepsComplete(m)) {
                 CutterHal::ClearMotorAlerts(m);
                 // Back away until the switch releases (variable distance).
+                if (!CutterHal::MoveVelocity(m, motor.homing_seek_velocity * away)) {
+                    ctrl->AbortHoming(motor, "Homing release move rejected");
+                    break;
+                }
                 motor.homing_state = HomingState::RELEASING;
-                CutterHal::MoveVelocity(m, motor.homing_seek_velocity * away);
             }
             break;
 
@@ -1104,19 +1139,26 @@ static void CheckStepperHomingState(Controller* ctrl, MotorSlot& motor) {
             if (!limit_active) {
                 CutterHal::StopMotor(m, true);
                 // Creep back toward the switch for a precise re-trigger.
+                if (!CutterHal::MoveVelocity(m, motor.homing_latch_velocity * motor.homing_direction)) {
+                    ctrl->AbortHoming(motor, "Homing latch move rejected");
+                    break;
+                }
                 motor.homing_state = HomingState::LATCHING;
-                CutterHal::MoveVelocity(m, motor.homing_latch_velocity * motor.homing_direction);
             }
             break;
 
         case HomingState::LATCHING:
             // Slow approach until the switch trips again - this is the datum.
-            if (limit_triggered || limit_active) {
+            // Back off only once the motor is at rest (see above).
+            if ((limit_triggered || limit_active) && CutterHal::StepsComplete(m)) {
                 CutterHal::ClearMotorAlerts(m);
                 // Move clear of the switch by the backoff distance, then zero
                 // at rest so position 0 has margin from the limit.
+                if (!CutterHal::MoveRelative(m, motor.homing_backoff_distance * away)) {
+                    ctrl->AbortHoming(motor, "Homing backoff move rejected");
+                    break;
+                }
                 motor.homing_state = HomingState::BACKING_OFF;
-                CutterHal::MoveRelative(m, motor.homing_backoff_distance * away);
             }
             break;
 

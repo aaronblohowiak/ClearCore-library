@@ -486,6 +486,18 @@ public:
     void StartNextHoming();
 
     /**
+        \brief Abort an in-progress homing sequence after a rejected move
+
+        Stops the motor, returns it to HomingState::IDLE (not homed), emits an
+        "error" event (MOVE_REJECTED) tagged with the homing move's id, and
+        cancels enable_all if this motor is the one it is homing.
+
+        \param[in] motor The motor whose homing failed
+        \param[in] message Error message for the event
+    **/
+    void AbortHoming(MotorSlot& motor, const char* message);
+
+    /**
         \brief Get the motor step clock rate the firmware has applied
 
         Board-global setting (CLOCK_RATE_LOW/NORMAL/HIGH). Reported by

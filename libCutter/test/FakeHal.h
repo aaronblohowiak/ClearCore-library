@@ -40,6 +40,7 @@ struct FakeHalState {
     bool motor_moving[4] = {};
     bool motor_steps_complete[4] = {true, true, true, true};
     bool move_rejected[4] = {};                // If set, Move*() returns false (sim alert/at limit)
+    uint8_t reject_next_moves[4] = {};         // Reject this many more Move*() calls, then accept
     int32_t motor_position[4] = {};
     int32_t motor_target[4] = {};
     int32_t motor_velocity[4] = {};
@@ -183,6 +184,28 @@ struct FakeHalState {
     }
 
     /**
+     * @brief Latch a limit alert while the motor is still moving
+     *
+     * Models ClearCore on a tick that emits no step: the alert latches and the
+     * input reads active immediately, but the limit stop itself is deferred to
+     * the next tick that emits a step, so the motor keeps moving for now. Use
+     * StopMotor()/STOP_MOTOR() to model ClearCore stopping it afterwards.
+     * @param motor Motor index (0-3)
+     * @param neg true for the negative limit, false for the positive limit
+     */
+    void LatchLimitWhileMoving(uint8_t motor, bool neg) {
+        if (motor < 4) {
+            if (neg) {
+                motion_canceled_neg_limit[motor] = true;
+                in_neg_limit[motor] = true;
+            } else {
+                motion_canceled_pos_limit[motor] = true;
+                in_pos_limit[motor] = true;
+            }
+        }
+    }
+
+    /**
      * @brief Set the live positive limit input state (press/release)
      * @param motor Motor index (0-3)
      * @param active true = switch active/pressed, false = released
@@ -265,8 +288,12 @@ extern FakeHalState g_fake;
 #define SET_PIN_FAULT(pin, f)   g_fake.pin_fault[pin] = (f)
 #define SET_MOTOR_FAULT(m, f)   g_fake.motor_fault[m] = (f)
 #define SET_MOVE_REJECTED(m, r) g_fake.move_rejected[m] = (r)
+#define REJECT_NEXT_MOVES(m, n) g_fake.reject_next_moves[m] = (n)
 #define TRIGGER_NEG_LIMIT(m)    g_fake.TriggerNegativeLimit(m)
 #define TRIGGER_POS_LIMIT(m)    g_fake.TriggerPositiveLimit(m)
+#define LATCH_NEG_LIMIT_MOVING(m) g_fake.LatchLimitWhileMoving(m, true)
+#define LATCH_POS_LIMIT_MOVING(m) g_fake.LatchLimitWhileMoving(m, false)
+#define STOP_MOTOR(m)           CutterHal::StopMotor(m, true)
 #define SET_POS_LIMIT(m, a)     g_fake.SetPosLimit(m, a)
 #define SET_NEG_LIMIT(m, a)     g_fake.SetNegLimit(m, a)
 #define TRIGGER_ESTOP(m)        g_fake.TriggerEStop(m)

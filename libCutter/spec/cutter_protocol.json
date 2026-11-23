@@ -233,7 +233,8 @@
       "valid_states": ["CONFIGURED", "READY"],
       "params": {},
       "response_params": ["count"],
-      "emits_events": ["homing_started", "homed", "all_homed"]
+      "emits_events": ["homing_started", "homed", "all_homed", "error"],
+      "notes": "If a motor's homing move is rejected by the hardware, an error event (code 307 MOVE_REJECTED, with motor) is emitted, that motor is left unhomed, and the enable_all sequence is cancelled (no all_homed)."
     },
 
     "disable": {
@@ -318,7 +319,8 @@
         "motor": { "type": "motor_index", "required": true }
       },
       "response_params": ["motor"],
-      "emits_events": ["homed"]
+      "emits_events": ["homed", "error"],
+      "notes": "If the seek move is rejected (e.g. an alert is still latched), home fails with error 307 MOVE_REJECTED instead of ok; starting on the homing switch is not a rejection. If a later homing move is rejected, homing aborts with an error event (code 307, with motor) and the motor is left unhomed."
     },
 
     "set_position": {

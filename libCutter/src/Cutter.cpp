@@ -786,7 +786,12 @@ void Controller::CheckMotors() {
         // Check for move completion
         // For SDSK/ClearPath: steps complete AND HLFB asserted AND no alerts
         // For generic steppers: just steps complete (open-loop, no position feedback)
-        if (motor.moving && CutterHal::StepsComplete(motor.motor_index)) {
+        // Skip during active homing: the sequence stops at the switch between
+        // phases and reports its own completion ("homed"), so a stop there is
+        // not the end of the move.
+        if (motor.moving && CutterHal::StepsComplete(motor.motor_index) &&
+            (motor.homing_state == HomingState::IDLE ||
+             motor.homing_state == HomingState::COMPLETE)) {
             bool move_complete = true;
             if (motor.type == MotorType::CLEARPATH) {
                 // SDSK needs HLFB asserted AND no alerts to confirm move truly complete
@@ -936,7 +941,7 @@ void Controller::SetEnableAllId(const CommandId& id) {
 
 void Controller::StartNextHoming() {
     // Forward declaration of StartHoming from MotorCommands.cpp
-    extern void StartHoming(MotorSlot* slot, const CommandId& id);
+    extern bool StartHoming(MotorSlot* slot, const CommandId& id);
 
     while (m_currentHomingIndex < m_homingCount) {
         uint8_t motor_idx = m_homingOrder[m_currentHomingIndex];
@@ -948,8 +953,13 @@ void Controller::StartNextHoming() {
             continue;
         }
 
-        // Start homing this motor
-        StartHoming(slot, m_enableAllId);
+        // Start homing this motor. If the seek is rejected, report it and
+        // cancel enable_all rather than waiting on a motor that never moves.
+        if (!StartHoming(slot, m_enableAllId)) {
+            slot->move_id = m_enableAllId;  // tag the error with enable_all
+            AbortHoming(*slot, "Homing move rejected: clear alerts and retry");
+            return;
+        }
 
         // Transition to WORKING if needed
         if (m_stateMachine.GetState() == State::READY) {
@@ -968,6 +978,37 @@ void Controller::StartNextHoming() {
     m_response.Event("all_homed", m_enableAllId)
         .Param("count", static_cast<int32_t>(m_homingCount));
     SendResponse();
+}
+
+void Controller::AbortHoming(MotorSlot& motor, const char* message) {
+    CutterHal::StopMotor(motor.motor_index, true);
+    motor.homing_state = HomingState::IDLE;
+    motor.moving = false;
+    motor.homed = false;
+
+    // enable_all homes motors one at a time; it cannot continue past a motor
+    // that failed to home.
+    if (m_enableAllActive && m_currentHomingIndex < m_homingCount &&
+        m_homingOrder[m_currentHomingIndex] == motor.motor_index) {
+        m_enableAllActive = false;
+    }
+
+    m_response.Event("error", motor.move_id)
+        .Param("code", static_cast<uint32_t>(ErrorCode::MOVE_REJECTED))
+        .Param("motor", static_cast<int32_t>(motor.motor_index))
+        .Param("message", message);
+    SendResponse();
+
+    bool any_moving = false;
+    for (size_t j = 0; j < NUM_MOTORS; j++) {
+        if (m_motors[j].moving) {
+            any_moving = true;
+            break;
+        }
+    }
+    if (!any_moving && m_stateMachine.GetState() == State::WORKING) {
+        m_stateMachine.TransitionTo(State::READY);
+    }
 }
 
 // Built-in commands

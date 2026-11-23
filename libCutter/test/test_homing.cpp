@@ -289,3 +289,155 @@ TEST_F(HomingTest, SdskLimitInvertSelectsNormallyOpen) {
     EXPECT_FALSE(g_fake.limit_switch_invert[1]);
     EXPECT_FALSE(ctrl->GetMotor(1)->limit_invert);
 }
+
+// === Contact handling: wait for rest, check move results ===
+
+// ClearCore latches the limit alert before it stops the motor (the stop waits
+// for a tick that emits a step). SEEKING must not reverse until the motor is at
+// rest, or ClearCore's deferred limit stop cancels the reverse move.
+TEST_F(HomingTest, SeekingWaitsForMotorToStopBeforeReversing) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    ASSERT_EQ(g_fake.motor_velocity[0], -5000);
+
+    LATCH_NEG_LIMIT_MOVING(0);  // alert latched, motor still moving
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::SEEKING);
+    EXPECT_EQ(g_fake.motor_velocity[0], -5000);           // no reverse yet
+    EXPECT_TRUE(g_fake.motion_canceled_neg_limit[0]);     // alert left latched
+
+    STOP_MOTOR(0);  // ClearCore's limit stop takes effect
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::RELEASING);
+    EXPECT_EQ(g_fake.motor_velocity[0], 5000);            // backing away
+    EXPECT_FALSE(g_fake.motion_canceled_neg_limit[0]);    // cleared at rest
+}
+
+TEST_F(HomingTest, LatchingWaitsForMotorToStopBeforeBackingOff) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+    SET_NEG_LIMIT(0, false);
+    ctrl->Update();
+    ASSERT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
+    ASSERT_EQ(g_fake.motor_velocity[0], -500);
+
+    LATCH_NEG_LIMIT_MOVING(0);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::LATCHING);
+    EXPECT_EQ(g_fake.motor_velocity[0], -500);            // still creeping in
+
+    STOP_MOTOR(0);
+    ctrl->Update();
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::BACKING_OFF);
+    EXPECT_EQ(g_fake.motor_target[0], g_fake.motor_position[0] + 200);
+}
+
+// Stopping at the switch between phases is not the end of the move: no "done",
+// and the motor stays "moving" until "homed".
+TEST_F(HomingTest, StopAtSwitchDuringHomingIsNotDone) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasEvent("done"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+    EXPECT_EQ(ctrl->GetState(), State::WORKING);
+
+    SET_NEG_LIMIT(0, false);
+    ctrl->Update();
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasEvent("done"));
+    EXPECT_TRUE(ctrl->GetMotor(0)->moving);
+
+    COMPLETE_MOVE(0);
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasEvent("done"));
+    EXPECT_TRUE(serial.HasEvent("homed"));
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+TEST_F(HomingTest, RejectedSeekReportsErrorInsteadOfHanging) {
+    SET_MOVE_REJECTED(0, true);
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasOutput("error"));
+    EXPECT_TRUE(serial.HasOutput("code=307"));
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::IDLE);
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+// ClearCore rejects a seek into an already-active limit (latching its alert);
+// that is contact, not a failure.
+TEST_F(HomingTest, SeekRejectedBecauseAlreadyOnSwitchProceeds) {
+    REJECT_NEXT_MOVES(0, 1);                     // only the seek is rejected
+    g_fake.motion_canceled_neg_limit[0] = true;  // ClearCore latches on reject
+    SET_NEG_LIMIT(0, true);
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+
+    // The home command succeeds, and SEEKING treats the switch as contact
+    // right away: the motor is at rest, so it backs off in the same pass.
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_FALSE(serial.HasOutput("code=307"));
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::RELEASING);
+    EXPECT_EQ(g_fake.motor_velocity[0], 5000);
+}
+
+TEST_F(HomingTest, RejectedReleaseMoveAbortsHoming) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    serial.ClearOutput();
+
+    TRIGGER_NEG_LIMIT(0);
+    SET_MOVE_REJECTED(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_TRUE(serial.HasOutput("code=307"));
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::IDLE);
+    EXPECT_FALSE(ctrl->GetMotor(0)->moving);
+    EXPECT_FALSE(ctrl->GetMotor(0)->homed);
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+TEST_F(HomingTest, RejectedLatchMoveAbortsHoming) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+    serial.ClearOutput();
+
+    SET_MOVE_REJECTED(0, true);
+    SET_NEG_LIMIT(0, false);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::IDLE);
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}
+
+TEST_F(HomingTest, RejectedBackoffMoveAbortsHoming) {
+    serial.SendLine("home motor=0");
+    ctrl->Update();
+    TRIGGER_NEG_LIMIT(0);
+    ctrl->Update();
+    SET_NEG_LIMIT(0, false);
+    ctrl->Update();
+    serial.ClearOutput();
+
+    TRIGGER_NEG_LIMIT(0);
+    SET_MOVE_REJECTED(0, true);
+    ctrl->Update();
+
+    EXPECT_TRUE(serial.HasEvent("error"));
+    EXPECT_FALSE(serial.HasEvent("homed"));
+    EXPECT_EQ(ctrl->GetMotor(0)->homing_state, HomingState::IDLE);
+    EXPECT_EQ(ctrl->GetState(), State::READY);
+}

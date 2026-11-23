@@ -705,6 +705,10 @@ Start homing sequence for a motor. The motor must be enabled.
   4. **backing_off** — move `homing_backoff` steps off the switch (measured from the datum).
   5. **complete** — set position **0 at the resting point**, clear of the switch, and emit `event type=homed`.
 
+  After each contact (seeking, latching) homing waits for the motor to come to rest before clearing the limit alert and starting the next move, so ClearCore's own limit stop cannot cancel it.
+
+  If the hardware rejects a homing move (for example an alert is still latched), homing does not hang: a rejected seek makes `home` fail with error `307` (MOVE_REJECTED); a rejected move later in the sequence aborts homing with `event type=error code=307 motor=N`, leaving the motor unhomed (`enable_all` is cancelled). Starting on the homing switch is fine. `clear_alerts` and retry.
+
   Because zero is established after the clearance backoff, the switch contact ends up at `-homing_backoff` and **position 0 has margin from the limit** — you can command a move to 0 without risk of tripping the switch. (Set a soft-limit minimum of 0 to enforce this.) The in-progress phase is visible as `homing_state` in [`get_status`](#get_status).
 
 ```
