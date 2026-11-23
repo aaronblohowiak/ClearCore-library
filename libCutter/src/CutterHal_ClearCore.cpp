@@ -308,6 +308,13 @@ bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
     return false;
 }
 
+void SetLimitSwitchInvert(uint8_t motor, bool invert) {
+    auto* m = GetMotor(motor);
+    if (m) {
+        m->LimitSwitchInvert(invert);
+    }
+}
+
 bool InPosLimit(uint8_t motor) {
     auto* m = GetMotor(motor);
     if (m) {

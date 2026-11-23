@@ -1299,6 +1299,9 @@ void Controller::CmdGetStatus(const ParsedCommand& cmd) {
             if (motor.limit_pos_pin != CutterHal::PIN_INVALID) {
                 m_response.Param("limit_pos_pin", static_cast<int32_t>(motor.limit_pos_pin));
             }
+            if (motor.limit_invert) {
+                m_response.Param("limit_invert", true);
+            }
         }
 
         // Sensor E-Stop config (set via configure_estop).

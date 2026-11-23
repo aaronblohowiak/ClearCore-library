@@ -221,9 +221,10 @@ struct PinSlot {
     - SDSK/ClearPath: Use HLFB hard-stop homing (move into mechanical stop, detect via torque)
 
     \par Fail-Safe Endstops
-    For generic steppers, end_stop_triggered defaults to 0, meaning the endstop
-    is triggered when the pin reads LOW. This assumes normally-closed (NC) switches
-    which fail safe: a broken wire reads the same as a triggered switch.
+    By default a limit switch is triggered when its pin reads LOW. This assumes
+    normally-closed (NC) switches which fail safe: a broken wire reads the same
+    as a triggered switch. limit_invert=true selects normally-open (NO) logic
+    (triggered when the pin reads HIGH), which does not fail safe.
 
     \par Soft Limits for Velocity Moves
     When soft_limits_enabled is true, velocity moves (move_velocity command) are
@@ -261,6 +262,7 @@ struct MotorSlot {
     // Limit switch configuration (used when homing_mode=LIMIT_SWITCH)
     uint8_t limit_neg_pin;          ///< Pin for negative limit switch (PIN_INVALID = none)
     uint8_t limit_pos_pin;          ///< Pin for positive limit switch (PIN_INVALID = none)
+    bool limit_invert;              ///< true = NO switches (active high), false = NC (default)
 
     // Limit switch runtime state (for change events)
     bool last_pos_limit;            ///< Last seen positive limit input state

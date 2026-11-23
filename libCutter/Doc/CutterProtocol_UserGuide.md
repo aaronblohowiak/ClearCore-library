@@ -49,7 +49,7 @@ Commands are sent as single lines terminated by newline (`\n`). Responses are se
 **Connection banner.** When a host opens the serial port, the controller emits a one-time `debug` banner identifying itself, before any command is sent:
 
 ```
-<- debug message="cutter ready" protocol=2.2 version=2.2.0 device_id=12648430
+<- debug message="cutter ready" protocol=2.3 version=2.3.0 device_id=12648430
 ```
 
 - `protocol` / `version` match the values returned by the `version` command.
@@ -251,7 +251,7 @@ Get firmware and protocol version.
 
 ```
 -> version
-<- ok version=2.2.0 protocol=2.2
+<- ok version=2.3.0 protocol=2.3
 ```
 
 `version` and `protocol` are **SemVer strings**, not numbers. They appear unquoted
@@ -292,7 +292,7 @@ Dump the full configured state: one `status` row per configured pin, one per con
 | Row (`type=`) | Key fields |
 |---------------|-----------|
 | `pin` | `pin`, `mode`, then mode-specific fields (`value`, `invert`, `report_changes`, `report_edges`, `duty`, `triggered`, ...) |
-| `motor` | `motor`, `motor_type`, `enabled`, `moving`, `position`, `homed`, `homing_mode`, `vel_max`, `accel_max`, `enable_priority` (+ optional `hlfb_timeout` [ClearPath], `soft_limit_min/max`, `homing_direction`/`homing_seek_velocity`/`homing_latch_velocity`/`homing_backoff` & `limit_neg_pin`/`limit_pos_pin` [limit_switch], `estop_pin`/`estop_decel`, `velocity_move`, `homing_state`) |
+| `motor` | `motor`, `motor_type`, `enabled`, `moving`, `position`, `homed`, `homing_mode`, `vel_max`, `accel_max`, `enable_priority` (+ optional `hlfb_timeout` [ClearPath], `soft_limit_min/max`, `homing_direction`/`homing_seek_velocity`/`homing_latch_velocity`/`homing_backoff` & `limit_neg_pin`/`limit_pos_pin`/`limit_invert` [limit_switch], `estop_pin`/`estop_decel`, `velocity_move`, `homing_state`) |
 | `summary` | `pin_count`, `motor_count`, `motor_clock` |
 
 ---
@@ -334,6 +334,7 @@ complete and when the motor hits torque limits during homing.
 | `homing_backoff` | int | 200 | Backoff distance after contact (limit_switch mode) |
 | `limit_neg_pin` | int | none | Negative limit switch pin (limit_switch mode) |
 | `limit_pos_pin` | int | none | Positive limit switch pin (limit_switch mode) |
+| `limit_invert` | bool | false | `true` for normally-open (NO) limit switches (limit_switch mode, protocol 2.3+) |
 | `soft_limits` | bool | false | Enable soft limits |
 | `soft_min` | int | INT32_MIN | Minimum position |
 | `soft_max` | int | INT32_MAX | Maximum position |
@@ -371,6 +372,7 @@ Configure a generic stepper motor. Uses ClearCore native limit switches for homi
 | `homing_backoff` | int | 200 | Backoff distance after contact |
 | `limit_neg_pin` | int | none | Negative limit switch pin |
 | `limit_pos_pin` | int | none | Positive limit switch pin |
+| `limit_invert` | bool | false | `true` for normally-open (NO) limit switches (protocol 2.3+) |
 | `soft_limits` | bool | false | Enable soft limits |
 | `soft_min` | int | INT32_MIN | Minimum position |
 | `soft_max` | int | INT32_MAX | Maximum position |
@@ -381,11 +383,22 @@ Configure a generic stepper motor. Uses ClearCore native limit switches for homi
 
 **Note:** If `homing_mode=limit_switch`, the limit switch in the homing direction must be configured.
 
+**Limit switch polarity:** limit switches default to normally-closed (NC)
+logic: the limit is active when the input reads low (switch open), so a broken
+wire stops the axis. For normally-open (NO) switches pass `limit_invert=true`;
+the limit is then active when the input reads high (switch closed). NO switches
+do not fail safe: a broken wire looks like an untriggered switch. The setting
+applies to both limit pins of the motor and is enforced by ClearCore's native
+limit handling, so the hardware stop still works (protocol 2.3+).
+
 ```
 -> configure_stepper motor=1 vel_max=5000 limit_neg_pin=6 homing_direction=-1
 <- ok motor=1
 
 -> configure_stepper motor=1 homing_mode=none
+<- ok motor=1
+
+-> configure_stepper motor=1 limit_neg_pin=6 limit_invert=true
 <- ok motor=1
 ```
 

@@ -140,6 +140,7 @@ MotorDriver::MotorDriver(ShiftRegister::Masks enableMask,
       m_brakeOutputPin(CLEARCORE_PIN_INVALID),
       m_limitSwitchNeg(CLEARCORE_PIN_INVALID),
       m_limitSwitchPos(CLEARCORE_PIN_INVALID),
+      m_limitSwitchInverted(false),
       m_eStopConnector(CLEARCORE_PIN_INVALID),
       m_motionCancellingEStop(false),
       m_shiftRegEnableReq(false),
@@ -316,24 +317,26 @@ void MotorDriver::Refresh() {
     }
     if (m_limitSwitchPos != CLEARCORE_PIN_INVALID) {
         // Update the positive limit state with the value on the connector.
+        // NC (default): active when the input is low. Inverted (NO): high.
         Connector *input = SysMgr.ConnectorByIndex(m_limitSwitchPos);
         if (input->Type() == CCIO_DIGITAL_IN_OUT_TYPE) {
-            PosLimitActive(!input->State());
+            PosLimitActive(!input->State() != m_limitSwitchInverted);
         }
         else {
             DigitalIn *inputB = static_cast<DigitalIn *>(input);
-            PosLimitActive(!inputB->DigitalIn::State());
+            PosLimitActive(!inputB->DigitalIn::State() != m_limitSwitchInverted);
         }
     }
     if (m_limitSwitchNeg != CLEARCORE_PIN_INVALID) {
         // Update the negative limit state with the value on the connector.
+        // NC (default): active when the input is low. Inverted (NO): high.
         Connector *input = SysMgr.ConnectorByIndex(m_limitSwitchNeg);
         if (input->Type() == CCIO_DIGITAL_IN_OUT_TYPE) {
-            NegLimitActive(!input->State());
+            NegLimitActive(!input->State() != m_limitSwitchInverted);
         }
         else {
             DigitalIn *inputB = static_cast<DigitalIn *>(input);
-            NegLimitActive(!inputB->DigitalIn::State());
+            NegLimitActive(!inputB->DigitalIn::State() != m_limitSwitchInverted);
         }
     }
 

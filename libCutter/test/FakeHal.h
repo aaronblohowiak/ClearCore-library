@@ -52,6 +52,7 @@ struct FakeHalState {
     // === Limit Switch State ===
     uint8_t limit_switch_neg_pin[4] = {255, 255, 255, 255};  // PIN_INVALID = 255
     uint8_t limit_switch_pos_pin[4] = {255, 255, 255, 255};
+    bool limit_switch_invert[4] = {};        // NO (normally-open) switch logic
     bool motion_canceled_neg_limit[4] = {};  // Alert flag
     bool motion_canceled_pos_limit[4] = {};  // Alert flag
     bool in_pos_limit[4] = {};               // Live positive limit input state

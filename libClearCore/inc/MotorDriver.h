@@ -1140,6 +1140,40 @@ public:
     }
 
     /**
+        \brief Invert the sense of this motor's limit switch inputs.
+
+        By default the limit switches use normally-closed (NC) logic: a limit
+        is active when its input reads deasserted (switch open). Passing true
+        selects normally-open (NO) logic instead: a limit is active when its
+        input reads asserted (switch closed). Applies to both the positive and
+        negative limit switches.
+
+        \code{.cpp}
+        // M-0 uses normally-open limit switches.
+        ConnectorM0.LimitSwitchInvert(true);
+        \endcode
+
+        \note NO switches do not fail safe: a broken wire looks the same as an
+        untriggered switch.
+
+        \param[in] invert True for NO switch logic; false (default) for NC.
+
+        <div class="sd-disclaimer">For use with Step and Direction mode.</div>
+    **/
+    void LimitSwitchInvert(bool invert) {
+        m_limitSwitchInverted = invert;
+    }
+
+    /**
+        \brief Query whether this motor's limit switch inputs are inverted.
+
+        \return True if limit switches use NO logic, false for NC (default).
+    **/
+    bool LimitSwitchInvert() {
+        return m_limitSwitchInverted;
+    }
+
+    /**
         \brief Get the connector's operational mode.
 
         \code{.cpp}
@@ -1550,6 +1584,7 @@ private:
     // Limit Switch Feature
     ClearCorePins m_limitSwitchNeg;
     ClearCorePins m_limitSwitchPos;
+    bool m_limitSwitchInverted;
 
     // Hardware E-Stop Sensor Feature
     ClearCorePins m_eStopConnector;

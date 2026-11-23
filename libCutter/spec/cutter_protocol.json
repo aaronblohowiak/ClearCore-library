@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Cutter Protocol Specification",
-  "version": "2.2.0",
-  "protocol_version": "2.2",
+  "version": "2.3.0",
+  "protocol_version": "2.3",
   "_version_note": "version (firmware) and protocol_version are SemVer STRINGS, compared as strings - never parsed as numbers/floats. On the wire they appear unquoted only because they contain no spaces.",
   "changelog": {
+    "2.3": "Backward-compatible addition over 2.2: configure_sdsk and configure_stepper take an optional limit_invert bool (default false). false keeps normally-closed (NC) limit logic (active when the input reads low); true selects normally-open (NO) logic (active when the input reads high). Applies to both limit pins of the motor and is enforced by ClearCore's native limit handling. get_status reports limit_invert=1 on the motor row when set. A 2.2 device ignores the unknown param and treats NO switches as permanently tripped, so hosts using limit_invert should require protocol >= 2.3.",
     "2.2": "Backward-compatible addition over 2.1: move_until takes an optional max_steps search depth. If the sensor has not tripped after max_steps of travel from the start position, the move stops and emits 'done' (position = where it stopped). Soft limits remain required and still bound the move; max_steps only tightens them. A 2.1 device ignores the unknown param and searches to the soft limit, so hosts relying on max_steps should require protocol >= 2.2.",
     "2.1": "Backward-compatible additions over 2.0: get_status is now a complete dump of settable state. The summary row carries 'motor_clock' (the board-global motor step clock rate) so a host can confirm a set_motor_clock took effect. The motor row adds enable_priority, hlfb_timeout (ClearPath/SDSK), the limit_switch homing config (homing_direction/seek_velocity/latch_velocity/backoff, limit_neg_pin/limit_pos_pin), and the configure_estop pin/decel (estop_pin/estop_decel); the digital_in pin row adds report_changes. All are optional fields, present only when relevant. Hosts speaking 2.0 remain compatible.",
     "2.0": "BREAKING: strict seq lockstep. A supplied 'seq' must now exactly equal the device's next internal seq; one that's ahead is rejected with error 107 (SEQ_MISMATCH), whose 'expected' carries the seq to resync to. Previously any increasing host-chosen seq was accepted. seq remains OPTIONAL — hosts that omit it are unaffected — but hosts that send it must track the device counter (query get_next_seq to resync). Hosts speaking 1.x that supplied arbitrary seq values are NOT compatible.",
@@ -155,6 +156,8 @@
           "description": "Only used when homing_mode=limit_switch and homing_direction=-1" },
         "limit_pos_pin": { "type": "pin_index", "required": false,
           "description": "Only used when homing_mode=limit_switch and homing_direction=1" },
+        "limit_invert": { "type": "bool", "required": false, "default": false,
+          "description": "true = normally-open (NO) limit switches (active high); false = normally-closed (NC, active low). Only used when homing_mode=limit_switch" },
         "soft_limits": { "type": "bool", "required": false, "default": false },
         "soft_min": { "type": "int32", "required": false, "default": -2147483648 },
         "soft_max": { "type": "int32", "required": false, "default": 2147483647 }
@@ -182,6 +185,8 @@
         "homing_backoff": { "type": "int32", "required": false, "default": 200, "min": 1 },
         "limit_neg_pin": { "type": "pin_index", "required": false },
         "limit_pos_pin": { "type": "pin_index", "required": false },
+        "limit_invert": { "type": "bool", "required": false, "default": false,
+          "description": "true = normally-open (NO) limit switches (active high); false = normally-closed (NC, active low)" },
         "soft_limits": { "type": "bool", "required": false, "default": false },
         "soft_min": { "type": "int32", "required": false, "default": -2147483648 },
         "soft_max": { "type": "int32", "required": false, "default": 2147483647 }
@@ -500,6 +505,7 @@
         "homing_backoff": { "type": "int32", "description": "Present only when homing_mode=limit_switch" },
         "limit_neg_pin": { "type": "pin_index", "description": "Present when homing_mode=limit_switch and a negative limit pin is set" },
         "limit_pos_pin": { "type": "pin_index", "description": "Present when homing_mode=limit_switch and a positive limit pin is set" },
+        "limit_invert": { "type": "bool", "description": "Present (1) only when homing_mode=limit_switch and limit_invert=true (NO switches)" },
         "estop_pin": { "type": "pin_index", "description": "Sensor E-Stop input pin; present only when configure_estop set one" },
         "estop_decel": { "type": "uint32", "description": "E-Stop decel (steps/sec^2); present only when a non-default decel was set" },
         "velocity_move": { "type": "bool", "description": "Present only while a velocity move is in flight" },

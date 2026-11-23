@@ -244,6 +244,12 @@ bool SetLimitSwitchPos(uint8_t motor, uint8_t pin) {
     return false;
 }
 
+void SetLimitSwitchInvert(uint8_t motor, bool invert) {
+    if (motor < 4) {
+        g_fake.limit_switch_invert[motor] = invert;
+    }
+}
+
 bool InPosLimit(uint8_t motor) {
     if (motor < 4) {
         return g_fake.in_pos_limit[motor];

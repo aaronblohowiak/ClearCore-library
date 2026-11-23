@@ -145,8 +145,11 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
         slot->homing_seek_velocity = cmd.GetIntOr("homing_seek_velocity", 5000);
         slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
         slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
+        slot->limit_invert = cmd.GetBoolOr("limit_invert", false);
 
-        // Configure ClearCore limit switches
+        // Configure ClearCore limit switches. Polarity first, so the switches
+        // are never evaluated with the wrong sense.
+        CutterHal::SetLimitSwitchInvert(slot->motor_index, slot->limit_invert);
         if (limit_neg != CutterHal::PIN_INVALID) {
             CutterHal::SetLimitSwitchNeg(slot->motor_index, static_cast<uint8_t>(limit_neg));
             PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_neg));
@@ -162,6 +165,7 @@ static void CmdConfigureSdsk(Controller* ctrl, const ParsedCommand& cmd) {
     } else {
         slot->limit_neg_pin = CutterHal::PIN_INVALID;
         slot->limit_pos_pin = CutterHal::PIN_INVALID;
+        CutterHal::SetLimitSwitchInvert(slot->motor_index, false);
     }
 
     // Seed limit-switch change tracking with the current state so configuration
@@ -304,9 +308,12 @@ static void CmdConfigureStepper(Controller* ctrl, const ParsedCommand& cmd) {
     slot->homing_seek_velocity = cmd.GetIntOr("homing_seek_velocity", 5000);
     slot->homing_latch_velocity = cmd.GetIntOr("homing_latch_velocity", 500);
     slot->homing_backoff_distance = cmd.GetIntOr("homing_backoff", 200);
+    slot->limit_invert = cmd.GetBoolOr("limit_invert", false);
 
     // Configure ClearCore limit switches and mark pins as reserved
-    // ClearCore will internally configure the pin as digital input
+    // ClearCore will internally configure the pin as digital input.
+    // Polarity first, so the switches are never evaluated with the wrong sense.
+    CutterHal::SetLimitSwitchInvert(slot->motor_index, slot->limit_invert);
     if (limit_neg != CutterHal::PIN_INVALID) {
         CutterHal::SetLimitSwitchNeg(slot->motor_index, static_cast<uint8_t>(limit_neg));
         PinSlot* pin = ctrl->GetPin(static_cast<uint8_t>(limit_neg));

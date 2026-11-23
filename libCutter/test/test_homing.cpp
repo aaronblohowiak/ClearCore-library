@@ -243,3 +243,49 @@ TEST_F(HomingTest, NoLimitSwitchRequiredWhenNotHoming) {
     // Should succeed because homing is disabled
     EXPECT_TRUE(serial.HasOutput("ok"));
 }
+
+// === Limit switch polarity (NC default, NO via limit_invert) ===
+
+TEST_F(HomingTest, LimitSwitchesDefaultToNormallyClosed) {
+    // SetUp configured motor 0 without limit_invert.
+    EXPECT_FALSE(g_fake.limit_switch_invert[0]);
+    EXPECT_FALSE(ctrl->GetMotor(0)->limit_invert);
+
+    serial.SendLine("get_status");
+    ctrl->Update();
+    EXPECT_FALSE(serial.HasOutput("limit_invert"));
+}
+
+TEST_F(HomingTest, StepperLimitInvertSelectsNormallyOpen) {
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=6 limit_invert=true");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(g_fake.limit_switch_invert[0]);
+    EXPECT_TRUE(ctrl->GetMotor(0)->limit_invert);
+    EXPECT_EQ(g_fake.limit_switch_neg_pin[0], 6);
+
+    serial.ClearOutput();
+    serial.SendLine("get_status");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("limit_invert=1"));
+
+    // Reconfiguring without the flag restores NC logic.
+    serial.SendLine("configure_stepper motor=0 limit_neg_pin=6");
+    ctrl->Update();
+    EXPECT_FALSE(g_fake.limit_switch_invert[0]);
+    EXPECT_FALSE(ctrl->GetMotor(0)->limit_invert);
+}
+
+TEST_F(HomingTest, SdskLimitInvertSelectsNormallyOpen) {
+    serial.SendLine("configure_sdsk motor=1 homing_mode=limit_switch limit_neg_pin=7 limit_invert=true");
+    ctrl->Update();
+    EXPECT_TRUE(serial.HasOutput("ok"));
+    EXPECT_TRUE(g_fake.limit_switch_invert[1]);
+    EXPECT_TRUE(ctrl->GetMotor(1)->limit_invert);
+
+    // Non-limit-switch homing modes don't use limit switches: polarity resets.
+    serial.SendLine("configure_sdsk motor=1 homing_mode=msp limit_invert=true");
+    ctrl->Update();
+    EXPECT_FALSE(g_fake.limit_switch_invert[1]);
+    EXPECT_FALSE(ctrl->GetMotor(1)->limit_invert);
+}

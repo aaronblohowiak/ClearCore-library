@@ -296,7 +296,8 @@ constexpr uint8_t PIN_INVALID = 255;
     \brief Configure negative direction limit switch for motor
 
     The pin must be configured as digital input before calling this.
-    Uses NC (normally closed) switch logic - motion stops when pin goes low.
+    Uses NC (normally closed) switch logic - motion stops when pin goes low -
+    unless SetLimitSwitchInvert() selected NO logic.
 
     \param[in] motor Motor index (0-3)
     \param[in] pin Pin to use as limit switch (or PIN_INVALID to disable)
@@ -308,13 +309,27 @@ bool SetLimitSwitchNeg(uint8_t motor, uint8_t pin);
     \brief Configure positive direction limit switch for motor
 
     The pin must be configured as digital input before calling this.
-    Uses NC (normally closed) switch logic - motion stops when pin goes low.
+    Uses NC (normally closed) switch logic - motion stops when pin goes low -
+    unless SetLimitSwitchInvert() selected NO logic.
 
     \param[in] motor Motor index (0-3)
     \param[in] pin Pin to use as limit switch (or PIN_INVALID to disable)
     \return true if successfully configured
 **/
 bool SetLimitSwitchPos(uint8_t motor, uint8_t pin);
+
+/**
+    \brief Select limit switch polarity for motor
+
+    Applies to both the positive and negative limit switches of the motor.
+    Default (false) is NC logic: limit active when the pin reads low.
+    Inverted (true) is NO logic: limit active when the pin reads high.
+    Call before SetLimitSwitchNeg/Pos so the first evaluation is correct.
+
+    \param[in] motor Motor index (0-3)
+    \param[in] invert true for normally-open switches, false for normally-closed
+**/
+void SetLimitSwitchInvert(uint8_t motor, bool invert);
 
 /**
     \brief Get the live state of the positive limit switch input
